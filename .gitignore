@@ -6,3 +6,11 @@
 /EncoderTest/.vscode
 /EncoderTest/target
 /EncoderTest/src/EncoderTest.cpp
+/TempestInATree/lib/neopixel
+/TempestInATree/src/TempestInATree.cpp
+/TempestInATree/target
+/TempestInATree/photon_firmware_*
+/UnitTests/.vs
+/UnitTests/Debug
+/UnitTests/UnitTests.vcxproj.user
+/TempestInATree/.vscode
