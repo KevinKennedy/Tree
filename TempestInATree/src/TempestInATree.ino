@@ -5,25 +5,33 @@
  * Date:
  */
 
+#include <vector>
+#include <memory>
+
 #include "Animator.h"
 #include "GameEngine.h"
 #include <neopixel.h>
 
 SerialLogHandler logHandler;
 
+const int FireButtonPin = D0;
+const int StartButtonPin = D1;
+unsigned long lastFireButtonChangedTime = 0;
+int lastFireButtonChangedState = HIGH;
 
 const int EncoderAPin = D5;
 const int EncoderBPin = D6;
 unsigned int oldEncoderState;
 int encoderValue;
 
+const int encoderClicksPerLED = 4; // 400 encoder clicks per full rotation
 
 
-#define PIXEL_COUNT 50 //500
+#define PIXEL_COUNT 400
 #define PIXEL_PIN D2
 #define PIXEL_TYPE WS2812B
 
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN, PIXEL_TYPE);
+Adafruit_NeoPixel strip(PIXEL_COUNT, PIXEL_PIN, PIXEL_TYPE);
 
 AnimatorGroup* rootAnimator;
 TickCount rootDuration;
@@ -39,13 +47,15 @@ const LedCount halfSectionLength = sectionLength / 2;
 
 enum GAME_STATE
 {
+  GS_LED_INDEX_MODE,
   GS_ANIMATING,
-  GS_SLIDER,
+  GS_PLAYING,
 };
 
-GAME_STATE gameState = GS_ANIMATING;
+GAME_STATE gameState = GS_PLAYING;
+//GAME_STATE gameState = GS_LED_INDEX_MODE;
 
-int sliderStartEncoderValue;
+int encoderHomeValue;
 
 // Scale factor to compensate a litte for the power problems on the long string of leds
 const float powerScale = 0.4f;
@@ -57,7 +67,14 @@ const LedColor color_dark_blue = ScaleColor(powerScale, color_blue);
 const LedColor color_dark_white = ScaleColor(powerScale, color_white);
 #endif
 
-GameEngine* pGameEngine;
+GameEngine gameEngine;
+
+// Used only in GS_LED_INDEX_MODE
+int testLedIndex = 0;
+
+int frameCount = 0;
+TickCount nextFPSReportTime = 0;
+
 
 
 
@@ -69,14 +86,20 @@ void setup()
   pinMode(EncoderBPin, INPUT_PULLUP);                                     
   oldEncoderState = GetEncoderState();
   encoderValue = 0;
+  encoderHomeValue = 0;
   attachInterrupt(EncoderAPin, EncoderChangeInterrupt, CHANGE);      
   attachInterrupt(EncoderBPin, EncoderChangeInterrupt, CHANGE); 
 
+  pinMode(FireButtonPin, INPUT_PULLUP);
+  pinMode(StartButtonPin, INPUT_PULLUP);
 
   // Setup the LED strip
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
 
+  // TODO - Put us in GS_LED_INDEX_MODE if some button is pressed at startup
+
+  gameEngine.Start(millis2());
 
   // setup the animations for when we aren't playing the game
   rootAnimator = new AnimatorGroup();
@@ -98,19 +121,28 @@ void setup()
 
   rootDuration = rootAnimator->duration();
   localTimeOffset = millis2();
-
-
-  pGameEngine = new GameEngine();
-
 }
 
 // loop() runs over and over again, as quickly as it can execute.
 void loop()
 {
   EncoderStateUpdate();
+  bool firePressed = GetButtonState(FireButtonPin, millis2(), &lastFireButtonChangedTime, &lastFireButtonChangedState);
+
   
   switch(gameState)
   {
+    case GS_LED_INDEX_MODE:
+        {
+          testLedIndex = ((encoderValue - encoderHomeValue) / encoderClicksPerLED) % PIXEL_COUNT;
+          if(testLedIndex < 0)
+          {
+            testLedIndex = PIXEL_COUNT + testLedIndex;
+          }
+          leds[testLedIndex] = color_yellow;
+        }
+      break;
+
     case GS_ANIMATING:
     {
       unsigned long localTime = millis2() - localTimeOffset;
@@ -124,26 +156,19 @@ void loop()
 
       if(EncoderMoved())
       {
-        sliderStartEncoderValue = encoderValue;
-        gameState = GS_SLIDER;
+        encoderHomeValue = encoderValue;
+        //gameState = GS_SLIDER;
       }
     }
     break;
 
-    case GS_SLIDER:
-    {
-      int ledIndex = (encoderValue - sliderStartEncoderValue) % 40;
-      if(ledIndex < 0)
-      {
-        ledIndex = 40 + ledIndex;
-      }
-      leds[ledIndex] = color_yellow;
+    case GS_PLAYING:
+      int playerPosition = ((encoderValue - encoderHomeValue) / encoderClicksPerLED) % gameEngine.GetPathLedCount();
+      if(playerPosition < 0) playerPosition += gameEngine.GetPathLedCount();
+      gameEngine.Step(millis2(), playerPosition, firePressed);
+      gameEngine.SetLeds(leds);
+      break;
 
-      if(EncoderIdle())
-      {
-        gameState = GS_ANIMATING;
-      }
-    }
   }
 
   unsigned int pixelIndex = 0;
@@ -154,11 +179,48 @@ void loop()
   strip.show();
   fill(leds.begin(), leds.end(), 0x00000000);
 
+
+  frameCount++;
+  if(millis2() > nextFPSReportTime)
+  {
+    Log.info("FPS: %d", frameCount);
+    frameCount = 0;
+    nextFPSReportTime = millis2() + 1000;
+
+    if(gameState == GS_LED_INDEX_MODE)
+    {
+      Log.info("LED Index: %d", testLedIndex);
+    }
+
+    //Log.info("Fire button %s", firePressed ? "down":"up");
+  }
 }
 
 unsigned long millis2()
 {
-    return millis() * 4;
+    return millis(); // * 4;
+}
+
+const unsigned long buttonBounceTime = 50; // in milliseconds
+
+// true for pressed, false for not pressed.  Input is pulled-up and active low
+bool GetButtonState(int inputPin, unsigned long now, unsigned long* pLastChangeTime, int* pLastChangeState)
+{
+  int currentState = digitalRead(inputPin);
+
+  if(now - *pLastChangeTime > buttonBounceTime)
+  {
+    // it's been long enough since the last time the button changed states
+    // so allow checking for a new state
+    if(currentState != *pLastChangeState)
+    {
+      // The button state changed so start a debounce
+      *pLastChangeState = currentState;
+      *pLastChangeTime = now;
+    }
+  }
+  
+  return LOW == *pLastChangeState;
 }
 
 

@@ -1,13 +1,12 @@
 #pragma once
 
-
-#include <vector>
-#include <memory>
-
 typedef uint16_t LedIndex;
 typedef uint16_t LedCount;
 typedef uint32_t LedColor;
 typedef uint32_t TickCount;
+
+const TickCount TicksPerSecond = 1000;
+const TickCount TickCountMax = UINT32_MAX;
 
 inline uint8_t Red(LedColor color) { return (color >> 16) & 0xFF; }
 inline uint8_t Green(LedColor color) { return (color >> 8) & 0xFF; }

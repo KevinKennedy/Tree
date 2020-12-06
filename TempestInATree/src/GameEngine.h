@@ -1,19 +1,26 @@
 #pragma once
 
-
-#include <vector>
-#include <memory>
-
 #include "Animator.h"
 
+#ifndef ARRASIZE
+#define ARRAYSIZE(a) ((int)(sizeof(a) / sizeof(*a)))
+#endif
+
+namespace UnitTests
+{
+    class UnitTests;
+}
 
 class GameEngine
 {
+    friend class UnitTests::UnitTests;
+
 private:
-    const int treeBaseStartLedIndex = 0;
-    const int treeBaseEndLedIndex = 25;
-    const int pathStartLedIndex = 30;
-    const int pathEndLedIndex = 59;
+    const int treeBaseStartLedIndex = 1;
+    const int treeBaseEndLedIndex = 17;
+    const int pathLeftLedIndex = 55;
+    const int pathRightLedIndex = 27;
+    const int pathLedCount = abs(pathRightLedIndex - pathLeftLedIndex) + 1;
 
     static const int levelCount = 5;
 
@@ -25,7 +32,7 @@ private:
 
     const int startingLifeCount = 4;
 
-    enum GameState
+    enum class GameState
     {
         GS_STARTING_ANIMATION,
         GS_PLAYING_LEVEL,
@@ -51,6 +58,7 @@ private:
         int greenEnemyCount;
         float fireRateMultiplier;
         float speedMultiplier;
+        float enemySpawnDelta;
     };
 
     struct Shot
@@ -58,26 +66,43 @@ private:
         bool player; // otherwise enemy
         int laneIndex;
         float speed; // lane-lengths per second
-        float progress;
+        TickCount startTime;
+        float lanePosition;
 
-        inline bool IsValid() const { return laneIndex >= 0; }
-        inline void Invalidate() { laneIndex = -1; }
+        inline bool IsValid() const { return startTime > 0; }
+        inline void Invalidate() { startTime = 0; }
     };
+
+    enum class EnemyType
+    {
+        ET_FIRST = 0,
+        ET_WHITE = 0,
+        ET_RED,
+        ET_GREEN,
+        ET_LAST = ET_GREEN,
+        ET_COUNT,
+    };
+
+    EnemyType NextEnemyType(EnemyType et)
+    {
+        return static_cast<EnemyType>((static_cast<int>(et) + 1));
+    }
 
     struct Enemy
     {
-        int laneIndex;
-        float progress;
         float speed;
         TickCount shotDelta;
         LedColor color;
         bool laneSwitching;
         // enemy type?
+        TickCount startTime;
+        int laneIndex;
+        float lanePosition;
         TickCount nextShotTime;
         TickCount nextLaneSwitchTime;
 
-        inline bool IsValid() const { return laneIndex >= 0; }
-        inline void Invalidate() { laneIndex = -1; }
+        inline bool IsValid() const { return startTime > 0; }
+        inline void Invalidate() { startTime = 0; }
     };
 
 
@@ -89,21 +114,36 @@ private:
     int levelIndex = 0;
     int score = 0;
     int livesRemaining = 0;
-    float playerPosition = 0;
+    float stepPlayerPosition = 0;
     Shot shots[maxActiveShots] = {};
     Enemy enemies[maxEnemies] = {};
+    TickCount nextEmenySpawnTime = 0;
+    int whiteEnemiesRemaining = 0;
+    int redEnemiesRemaining = 0;
+    int greenEnemiesRemaining = 0;
+    bool stepFireButtonPressed = false;
+    bool fireButtonWasReleased = false;
+
 
     void Reset(TickCount time);
     void StartLevel();
     void StepLevel();
+    void SpawnNextEnemy();
+    int& GetEnemiesRemaining(EnemyType et);
+    void AddShot(bool isPlayer, int laneIndex, float speed);
+    int GetClosestLaneToPathPosition(float pathPosition) const;
+
 
 public:
     GameEngine();
 
     void Start(TickCount time);
 
+    void FireShot() { stepFireButtonPressed = true; }
+
     void Step(TickCount time, int playerPosition, bool fireButtonPressed);
 
+    int GetPathLedCount() const { return pathLedCount; }
     void SetLeds(std::vector<LedColor>& leds) const;
 
     int GetRemainingLives() const { return livesRemaining; }

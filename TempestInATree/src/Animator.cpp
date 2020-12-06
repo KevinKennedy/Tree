@@ -1,8 +1,9 @@
+#include <vector>
+#include <memory>
+
 #include "Animator.h"
 
 
-#include <vector>
-#include <memory>
 
 LedColor ScaleColor(float scale, LedColor color)
 {
