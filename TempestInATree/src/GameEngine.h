@@ -16,11 +16,11 @@ class GameEngine
     friend class UnitTests::UnitTests;
 
 private:
-    const int treeBaseStartLedIndex = 1;
-    const int treeBaseEndLedIndex = 17;
-    const int pathLeftLedIndex = 55;
-    const int pathRightLedIndex = 27;
-    const int pathLedCount = abs(pathRightLedIndex - pathLeftLedIndex) + 1;
+    static const int treeBaseStartLedIndex = 1;
+    static const int treeBaseEndLedIndex = 17;
+    static const int pathLeftLedIndex = 55;
+    static const int pathRightLedIndex = 27;
+    static const int pathLedCount = abs(pathRightLedIndex - pathLeftLedIndex) + 1;
 
     static const int levelCount = 5;
 
@@ -29,6 +29,11 @@ private:
 
     static const int maxActiveShots = 30; // maximum number of simultanious shots (player and enemy)
     const float shotSpeed = 0.5f; // how many seconds it takes for a shot to travel the length of a lane (or, "lane-lengths per second")
+
+    const float shotEnemyCollisionThreshold = 0.05; // how close a shot needs to be to an enemy hit it
+    const float shotEnemySideCollisionPositionThreshold = 0.95; // When the enemy is on the player path, how far down the lane the shot still needs to be to have then enemy get destroyed
+    const float playerEnemySideDestroyPositionThreshold = 0.1; // When the enemy is on the player path, how close the enemy needs to be to the player to destroy the enemy
+    const float playerShotEnemyShotCollisionThreshold = 0.05; // how close the player's shot needs to be to an enemy shot to count a hit
 
     const int startingLifeCount = 4;
 
@@ -49,6 +54,7 @@ private:
         int count; // TODO - are we using this?
         int pathLedIndex; // position on the path.  0 is the start of the path.  The end of the path is abs(pathEndLedIndex - pathStartLedIndex) - test this :-)
         int GetLedIndex(float lanePosition) const { return GameEngine::LedIndexFromRange(startIndex, endIndex, lanePosition); }
+        float GetPathPosition() const { return (float)pathLedIndex / (float)GameEngine::pathLedCount;}
     };
 
     struct Level
@@ -83,6 +89,12 @@ private:
         ET_COUNT,
     };
 
+    enum class EnemyState
+    {
+        inLane,
+        onPlayerPath
+    };
+
     EnemyType NextEnemyType(EnemyType et)
     {
         return static_cast<EnemyType>((static_cast<int>(et) + 1));
@@ -95,11 +107,16 @@ private:
         LedColor color;
         bool laneSwitching;
         // enemy type?
+        EnemyState state;
         TickCount startTime;
+
         int laneIndex;
         float lanePosition;
         TickCount nextShotTime;
         TickCount nextLaneSwitchTime;
+
+        TickCount lastStepTime;
+        float pathPosition; // could share with lanePosition
 
         inline bool IsValid() const { return startTime > 0; }
         inline void Invalidate() { startTime = 0; }

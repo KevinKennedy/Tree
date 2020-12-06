@@ -15,9 +15,12 @@
 SerialLogHandler logHandler;
 
 const int FireButtonPin = D0;
-const int StartButtonPin = D1;
 unsigned long lastFireButtonChangedTime = 0;
 int lastFireButtonChangedState = HIGH;
+
+const int StartButtonPin = D1;
+unsigned long lastStartButtonChangedTime = 0;
+int lastStartButtonChangedState = HIGH;
 
 const int EncoderAPin = D5;
 const int EncoderBPin = D6;
@@ -128,6 +131,7 @@ void loop()
 {
   EncoderStateUpdate();
   bool firePressed = GetButtonState(FireButtonPin, millis2(), &lastFireButtonChangedTime, &lastFireButtonChangedState);
+  bool startPressed = GetButtonState(StartButtonPin, millis2(), &lastStartButtonChangedTime, &lastStartButtonChangedState);
 
   
   switch(gameState)
@@ -167,6 +171,11 @@ void loop()
       if(playerPosition < 0) playerPosition += gameEngine.GetPathLedCount();
       gameEngine.Step(millis2(), playerPosition, firePressed);
       gameEngine.SetLeds(leds);
+
+      if(startPressed)
+      {
+        gameEngine.Start(millis2());
+      }
       break;
 
   }

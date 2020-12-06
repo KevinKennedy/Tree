@@ -124,8 +124,28 @@ void GameEngine::StepLevel()
     {
         Enemy* pEnemy = enemies + iEnemy;
         if (!pEnemy->IsValid()) continue;
-        pEnemy->lanePosition = ((float)(stepTime - pEnemy->startTime) / (float)TicksPerSecond) * pEnemy->speed;
-        if (pEnemy->lanePosition > 1.0f) pEnemy->lanePosition = 1.0f;
+        if(pEnemy->state == EnemyState::inLane)
+        {
+            pEnemy->lanePosition = ((float)(stepTime - pEnemy->startTime) / (float)TicksPerSecond) * pEnemy->speed;
+            if (pEnemy->lanePosition > 1.0f)
+            {
+                // Enemy made it to the end of the lane, have it travel towards the player now
+                pEnemy->lanePosition = 1.0f;
+                pEnemy->state = EnemyState::onPlayerPath;
+                pEnemy->startTime = stepTime;
+                pEnemy->pathPosition = lanes[pEnemy->laneIndex].GetPathPosition();
+            }
+        }
+        else
+        {
+            // enemy is in the EnemyState::onPlayerPath state
+            float delta = ((float)(stepTime - pEnemy->lastStepTime) / (float)(TicksPerSecond)) * pEnemy->speed;
+            delta *= (stepPlayerPosition > pEnemy->pathPosition) ? 1.0f : -1.0f;
+            pEnemy->pathPosition += delta;
+        }
+
+        pEnemy->lastStepTime = stepTime;
+        
     }
 
     // Spawn new enemies
@@ -149,21 +169,73 @@ void GameEngine::StepLevel()
     }
     
 
-    // Check for collisions
-        // player shot and enemy - remove the shot and the enemy and count the hit
-        // player shot and enemy shot - remove the shot and the enemy shot - is this worth any points?
-
-    // player shot and start of lane - remove the shot
-    // enemy shot and end of lane - remove the shot
-    for (Shot* pShot = shots; pShot <= shots + ARRAYSIZE(shots); ++pShot)
+    // Check for collisions with player shots
+    for(Shot* pPlayerShot = shots; pPlayerShot < shots + ARRAYSIZE(shots); ++pPlayerShot)
     {
-        if (pShot->IsValid())
+        if(!pPlayerShot->IsValid() || !pPlayerShot->player) continue;
+
+        // player shot and enemy - remove the shot and the enemy and count the hit
+        for(Enemy* pEnemy = enemies; pEnemy < enemies + ARRAYSIZE(enemies); ++pEnemy)
         {
-            if ((pShot->player && pShot->lanePosition < 0.0f) ||
-                (!pShot->player && pShot->lanePosition > 1.0f))
+            if(!pEnemy->IsValid()) continue;
+
+            bool enemyHit = false;
+            if(EnemyState::inLane == pEnemy->state)
             {
-                pShot->Invalidate();
+                // Enemy is in a lane so check lane index and how close the shot is to the enemy
+                if(pEnemy->laneIndex == pPlayerShot->laneIndex)
+                {
+                    enemyHit = abs(pEnemy->lanePosition - pPlayerShot->lanePosition) < shotEnemyCollisionThreshold;
+                }
             }
+            else
+            {
+                // When an enemy is on the player path, the player needs to have
+                // just shot and the player must be close enough to the enemy.
+                enemyHit = (pPlayerShot->lanePosition > shotEnemySideCollisionPositionThreshold) &&
+                    (abs(pEnemy->pathPosition - stepPlayerPosition) < playerEnemySideDestroyPositionThreshold);
+            }
+
+            if(enemyHit)
+            {
+                // TODO - score the hit
+                // TODO - sound maybe some day :-)
+                pEnemy->Invalidate();
+                pPlayerShot->Invalidate();
+                break; // shot can only kill one enemy so don't look at more enemies and go to the next shot
+            }
+        }
+        if(!pPlayerShot->IsValid()) continue;
+
+        // player shot and enemy shot - remove the shot and the enemy shot - is this worth any points?
+        for(Shot* pEnemyShot = shots; pEnemyShot < shots + ARRAYSIZE(shots); ++pEnemyShot)
+        {
+            if(!pEnemyShot->IsValid() || pEnemyShot->player) continue;
+            if(abs(pPlayerShot->lanePosition - pEnemyShot->lanePosition) < playerShotEnemyShotCollisionThreshold)
+            {
+                // TODO - score ?
+                pPlayerShot->Invalidate();
+                pEnemyShot->Invalidate();
+                break; // player shot can only hit one enemy shot even if the're very close
+            }
+        }
+        if(!pPlayerShot->IsValid()) continue;
+
+        // Player shot goes away when it hits the start of the lane
+        if(pPlayerShot->lanePosition <= 0.0f)
+        {
+            pPlayerShot->Invalidate();
+        }
+    }
+
+    for (Shot* pEnemyShot = shots; pEnemyShot < shots + ARRAYSIZE(shots); ++pEnemyShot)
+    {
+        if (!pEnemyShot->IsValid() || pEnemyShot->player) continue;
+
+        // enemy shot and end of lane - remove the shot
+        if(pEnemyShot->lanePosition > 1.0f)
+        {
+            pEnemyShot->Invalidate();
         }
     }
         // enemy shot and player or enemy and player
@@ -215,9 +287,12 @@ void GameEngine::SpawnNextEnemy()
             Enemy* pNew = enemies + newEnemyIndex;
             *pNew = {};
             pNew->shotDelta = 1 * TicksPerSecond;
+            pNew->state = EnemyState::inLane;
             pNew->startTime = stepTime;
             pNew->laneIndex = rand() % ARRAYSIZE(lanes);
             pNew->lanePosition = 0.0f;
+            pNew->pathPosition = 0.0f;
+            pNew->lastStepTime = stepTime;
 
             switch (static_cast<EnemyType>(enemyIndex))
             {
@@ -314,25 +389,32 @@ void GameEngine::SetLeds(std::vector<LedColor>& leds) const
 
     leds[LedIndexFromRange(pathLeftLedIndex, pathRightLedIndex, stepPlayerPosition)] = color_yellow;
 
-    for (int laneIndex = 0; laneIndex < ARRAYSIZE(lanes); ++laneIndex)
+    for (const Lane* pLane = lanes; pLane < lanes + ARRAYSIZE(lanes); ++pLane)
     {
-        const Lane* pLane = lanes + laneIndex;
         FillLedRange(leds, pLane->startIndex, pLane->endIndex, color_blue);
     }
 
-    for (int shotIndex = 0; shotIndex < ARRAYSIZE(shots); ++shotIndex)
+    for (const Shot* pShot = shots; pShot < shots + ARRAYSIZE(shots); ++pShot)
     {
-        const Shot* pShot = shots + shotIndex;
         if (!pShot->IsValid()) continue;
         LedIndex ledIndex = lanes[pShot->laneIndex].GetLedIndex(pShot->lanePosition);
         leds[ledIndex] = pShot->player ? color_white : color_cyan;
     }
 
-    for (int enemyIndex = 0; enemyIndex < ARRAYSIZE(enemies) && enemies[enemyIndex].IsValid(); ++enemyIndex)
+    for (const Enemy* pEnemy = enemies; pEnemy < enemies + ARRAYSIZE(enemies); ++pEnemy)
     {
-        const Enemy* pEnemy = enemies + enemyIndex;
         if (!pEnemy->IsValid()) continue;
-        LedIndex ledIndex = lanes[pEnemy->laneIndex].GetLedIndex(pEnemy->lanePosition);
+
+        LedIndex ledIndex;
+        if(pEnemy->state == EnemyState::inLane)
+        {
+            ledIndex = lanes[pEnemy->laneIndex].GetLedIndex(pEnemy->lanePosition);
+        }
+        else
+        {
+            ledIndex = LedIndexFromRange(pathLeftLedIndex, pathRightLedIndex, pEnemy->pathPosition);
+        }
+
         leds[ledIndex] = pEnemy->color;
     }
     
