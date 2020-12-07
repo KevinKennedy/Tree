@@ -83,6 +83,7 @@ void GameEngine::Step(TickCount time, int playerPosition, bool fireButtonPressed
             StepLevel();
             break;
         case GameState::GS_LIFE_LOST_ANIMATION:
+            LifeLostAnimation();
             break;
         case GameState::GS_NEXT_LEVEL_ANIMATION:
             break;
@@ -168,7 +169,17 @@ void GameEngine::StepLevel()
         fireButtonWasReleased = true;
     }
     
+    HandleCollisions();
 
+    // Has the player killed all the enemies?  If so, do the next level animation.  If we do spikes, the player may lose lives during that animation
+
+    // is the player out of lives?  Start the game-over animation
+
+
+}
+
+void GameEngine::HandleCollisions()
+{
     // Check for collisions with player shots
     for(Shot* pPlayerShot = shots; pPlayerShot < shots + ARRAYSIZE(shots); ++pPlayerShot)
     {
@@ -228,23 +239,58 @@ void GameEngine::StepLevel()
         }
     }
 
+    bool playerDied = false;
+
     for (Shot* pEnemyShot = shots; pEnemyShot < shots + ARRAYSIZE(shots); ++pEnemyShot)
     {
         if (!pEnemyShot->IsValid() || pEnemyShot->player) continue;
 
-        // enemy shot and end of lane - remove the shot
-        if(pEnemyShot->lanePosition > 1.0f)
+        // enemy shot and end of lane - see if it hit the player - and remove the shot
+        if(pEnemyShot->lanePosition >= 1.0f)
         {
+            if(abs(lanes[pEnemyShot->laneIndex].GetPathPosition() - stepPlayerPosition) < playerEnemyShotCollisionThreshold)
+            {
+                playerDied = true;
+            }
+
             pEnemyShot->Invalidate();
         }
     }
+
+
+    if(!playerDied)
+    {
+        for(Enemy* pEnemy = enemies; pEnemy < enemies + ARRAYSIZE(enemies); pEnemy++)
+        {
+            if(!pEnemy->IsValid()) continue;
+            if(pEnemy->state == EnemyState::onPlayerPath)
+            {
+                if(abs(pEnemy->pathPosition - stepPlayerPosition) < playerEnemyCollisionThreshold)
+                {
+                    playerDied = true;
+                    pEnemy->Invalidate();
+                }
+            }
+        }
+    }
+
+    if(playerDied)
+    {
+        livesRemaining--;
+        for(Shot* pShot = shots; pShot < shots + ARRAYSIZE(shots); ++pShot)
+        {
+            pShot->Invalidate();
+        }
+        for(Enemy* pEnemy = enemies; pEnemy < enemies + ARRAYSIZE(enemies); ++pEnemy)
+        {
+            pEnemy->Invalidate();
+        }
+        gameState = GameState::GS_LIFE_LOST_ANIMATION;
+        lifeLostAnimationStartTime = stepTime;
+
+    }
         // enemy shot and player or enemy and player
             // decrenemt life count, remove all shots, move enemies to the start of the lanes, reset the enemy spawn time, start the player died animation
-
-    // Has the player killed all the enemies?  If so, do the next level animation.  If we do spikes, the player may lose lives during that animation
-
-    // is the player out of lives?  Start the game-over animation
-
 
 }
 
@@ -321,6 +367,13 @@ void GameEngine::SpawnNextEnemy()
         }
     }
 }
+void GameEngine::LifeLostAnimation()
+{
+    if(stepTime - lifeLostAnimationStartTime > lifeLostAnimationDuration)
+    {
+        gameState = GameState::GS_PLAYING_LEVEL;
+    }
+}
 
 int& GameEngine::GetEnemiesRemaining(EnemyType et)
 {
@@ -384,6 +437,13 @@ void GameEngine::SetLeds(std::vector<LedColor>& leds) const
 {
     // assumes caller set leds to all 0 before calling
 
+    LedColor laneColor = color_blue;
+
+    if(gameState == GameState::GS_LIFE_LOST_ANIMATION)
+    {
+        laneColor = (stepTime % 200) < 50 ? color_black : color_blue;
+    }
+
     FillLedRange(leds, treeBaseStartLedIndex, treeBaseEndLedIndex, color_red);
     FillLedRange(leds, pathLeftLedIndex, pathRightLedIndex, color_blue);
 
@@ -391,7 +451,7 @@ void GameEngine::SetLeds(std::vector<LedColor>& leds) const
 
     for (const Lane* pLane = lanes; pLane < lanes + ARRAYSIZE(lanes); ++pLane)
     {
-        FillLedRange(leds, pLane->startIndex, pLane->endIndex, color_blue);
+        FillLedRange(leds, pLane->startIndex, pLane->endIndex, laneColor);
     }
 
     for (const Shot* pShot = shots; pShot < shots + ARRAYSIZE(shots); ++pShot)

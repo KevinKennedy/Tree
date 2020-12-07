@@ -34,8 +34,11 @@ private:
     const float shotEnemySideCollisionPositionThreshold = 0.95; // When the enemy is on the player path, how far down the lane the shot still needs to be to have then enemy get destroyed
     const float playerEnemySideDestroyPositionThreshold = 0.1; // When the enemy is on the player path, how close the enemy needs to be to the player to destroy the enemy
     const float playerShotEnemyShotCollisionThreshold = 0.05; // how close the player's shot needs to be to an enemy shot to count a hit
-
+    const float playerEnemyCollisionThreshold = 0.05; // How close a player needs to be to an enemy for the player to die
+    const float playerEnemyShotCollisionThreshold = 0.1; // How close a player needs to be to an enemy shot on the player path for the player to die
     const int startingLifeCount = 4;
+
+    const TickCount lifeLostAnimationDuration = 1000;
 
     enum class GameState
     {
@@ -141,10 +144,14 @@ private:
     bool stepFireButtonPressed = false;
     bool fireButtonWasReleased = false;
 
+    TickCount lifeLostAnimationStartTime = 0;
+
 
     void Reset(TickCount time);
     void StartLevel();
     void StepLevel();
+    void LifeLostAnimation();
+    void HandleCollisions();
     void SpawnNextEnemy();
     int& GetEnemiesRemaining(EnemyType et);
     void AddShot(bool isPlayer, int laneIndex, float speed);
