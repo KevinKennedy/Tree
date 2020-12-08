@@ -39,6 +39,7 @@ private:
     const int startingLifeCount = 4;
 
     const TickCount lifeLostAnimationDuration = 1000;
+    const TickCount gameOverAnimationDuration = 1000;
 
     enum class GameState
     {
@@ -145,16 +146,19 @@ private:
     bool fireButtonWasReleased = false;
 
     TickCount lifeLostAnimationStartTime = 0;
+    TickCount gameOverAnimationStartTime = 0;
 
 
     void Reset(TickCount time);
     void StartLevel();
     void StepLevel();
     void LifeLostAnimation();
+    void GameOverAnimation();
     void HandleCollisions();
     void SpawnNextEnemy();
+    void FireEnemyShots();
     int& GetEnemiesRemaining(EnemyType et);
-    void AddShot(bool isPlayer, int laneIndex, float speed);
+    void AddShot(bool isPlayer, int laneIndex, float speed, float startingLanePosition);
     int GetClosestLaneToPathPosition(float pathPosition) const;
 
 

@@ -88,6 +88,7 @@ void GameEngine::Step(TickCount time, int playerPosition, bool fireButtonPressed
         case GameState::GS_NEXT_LEVEL_ANIMATION:
             break;
         case GameState::GS_GAME_OVER_ANIMATION:
+            GameOverAnimation();
             break;
         case GameState::GS_GAME_OVER:
             break;
@@ -153,6 +154,7 @@ void GameEngine::StepLevel()
     SpawnNextEnemy();
 
     // Have enemies shoot if it's time
+    FireEnemyShots();
 
     // Fire a shot if requested
     if (stepFireButtonPressed)
@@ -160,7 +162,7 @@ void GameEngine::StepLevel()
         if(fireButtonWasReleased)
         {
             int laneIndex = GetClosestLaneToPathPosition(stepPlayerPosition);
-            AddShot(true, laneIndex, shotSpeed);
+            AddShot(true, laneIndex, shotSpeed, 1.0f);
             fireButtonWasReleased = false;
         }
     }
@@ -285,8 +287,18 @@ void GameEngine::HandleCollisions()
         {
             pEnemy->Invalidate();
         }
-        gameState = GameState::GS_LIFE_LOST_ANIMATION;
-        lifeLostAnimationStartTime = stepTime;
+
+        if(livesRemaining > 0)
+        {
+            gameState = GameState::GS_LIFE_LOST_ANIMATION;
+            lifeLostAnimationStartTime = stepTime;
+        }
+        else
+        {
+            gameState = GameState::GS_GAME_OVER_ANIMATION;
+            gameOverAnimationStartTime = stepTime;
+        }
+        
 
     }
         // enemy shot and player or enemy and player
@@ -332,7 +344,7 @@ void GameEngine::SpawnNextEnemy()
 
             Enemy* pNew = enemies + newEnemyIndex;
             *pNew = {};
-            pNew->shotDelta = 1 * TicksPerSecond;
+            pNew->shotDelta = (TickCount)(1.5f * (float)TicksPerSecond);
             pNew->state = EnemyState::inLane;
             pNew->startTime = stepTime;
             pNew->laneIndex = rand() % ARRAYSIZE(lanes);
@@ -350,7 +362,7 @@ void GameEngine::SpawnNextEnemy()
                     break;
                 case EnemyType::ET_RED:
                     pNew->speed = 0.4f;
-                    pNew->color = color_white;
+                    pNew->color = color_red;
                     pNew->laneSwitching = true;
                     pNew->nextLaneSwitchTime = 0;
                     break;
@@ -367,11 +379,37 @@ void GameEngine::SpawnNextEnemy()
         }
     }
 }
+
+void GameEngine::FireEnemyShots()
+{
+    for(Enemy* pEnemy = enemies; pEnemy < enemies + ARRAYSIZE(enemies); ++pEnemy)
+    {
+        if(pEnemy->nextShotTime <= stepTime)
+        {
+            // Time to shoot
+            if(pEnemy->state == EnemyState::inLane)
+            {
+                AddShot(false, pEnemy->laneIndex, pEnemy->speed * 1.1f, pEnemy->lanePosition); // TODO - maybe we need a shotSpeed for enemies
+            }
+            pEnemy->nextShotTime = stepTime + pEnemy->shotDelta;
+
+        }
+    }
+}
+
 void GameEngine::LifeLostAnimation()
 {
     if(stepTime - lifeLostAnimationStartTime > lifeLostAnimationDuration)
     {
         gameState = GameState::GS_PLAYING_LEVEL;
+    }
+}
+
+void GameEngine::GameOverAnimation()
+{
+    if(stepTime - gameOverAnimationStartTime > gameOverAnimationDuration)
+    {
+        gameState = GameState::GS_GAME_OVER;
     }
 }
 
@@ -386,7 +424,7 @@ int& GameEngine::GetEnemiesRemaining(EnemyType et)
     }
 }
 
-void GameEngine::AddShot(bool isPlayer, int laneIndex, float speed)
+void GameEngine::AddShot(bool isPlayer, int laneIndex, float speed, float startingLanePosition)
 {
     for (int iShot = 0; iShot < ARRAYSIZE(shots); ++iShot)
     {
@@ -397,7 +435,7 @@ void GameEngine::AddShot(bool isPlayer, int laneIndex, float speed)
             pShot->laneIndex = laneIndex;
             pShot->speed = speed; // lane-lengths per second
             pShot->startTime = stepTime;
-            pShot->lanePosition = isPlayer ? 1.0f : 0.0f;
+            pShot->lanePosition = startingLanePosition;
             break;
         }
     }
@@ -443,8 +481,18 @@ void GameEngine::SetLeds(std::vector<LedColor>& leds) const
     {
         laneColor = (stepTime % 200) < 50 ? color_black : color_blue;
     }
+    else if(gameState == GameState::GS_GAME_OVER_ANIMATION)
+    {
+        laneColor = color_red;
+    }
+    else if(gameState == GameState::GS_GAME_OVER)
+    {
+        laneColor = color_green;
+    }
 
-    FillLedRange(leds, treeBaseStartLedIndex, treeBaseEndLedIndex, color_red);
+
+    FillLedRange(leds, treeBaseStartLedIndex, treeBaseStartLedIndex + livesRemaining, color_yellow); // off-by-one but simpler logic :-)
+    FillLedRange(leds, treeBaseStartLedIndex + livesRemaining, treeBaseEndLedIndex, color_red);
     FillLedRange(leds, pathLeftLedIndex, pathRightLedIndex, color_blue);
 
     leds[LedIndexFromRange(pathLeftLedIndex, pathRightLedIndex, stepPlayerPosition)] = color_yellow;
