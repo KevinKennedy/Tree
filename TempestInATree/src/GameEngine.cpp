@@ -69,7 +69,10 @@ void GameEngine::Start(TickCount time)
 
 void GameEngine::Step(TickCount time, int playerPosition, bool fireButtonPressed)
 {
+    stepDeltaTicks = time - stepTime;
+    stepDeltaSeconds = (float)stepDeltaTicks / (float)TicksPerSecond;
     stepTime = time;
+
     stepPlayerPosition = static_cast<float>(playerPosition) / (float)pathLedCount;
     stepFireButtonPressed = fireButtonPressed;
 
@@ -111,20 +114,15 @@ void GameEngine::StepLevel()
 
     // Update everything's position
     // shots
-    for (int iShot = 0; iShot < ARRAYSIZE(shots); ++iShot)
+    for (Shot* pShot = shots; pShot < shots + ARRAYSIZE(shots); ++pShot)
     {
-        Shot* pShot = shots + iShot;
         if (!pShot->IsValid()) continue;
-        pShot->lanePosition = (float)((stepTime - pShot->startTime) / (float)TicksPerSecond) / pShot->speed;
-        if (pShot->player)
-        {
-            pShot->lanePosition = 1.0f - pShot->lanePosition;
-        }
+        pShot->lanePosition += stepDeltaSeconds * pShot->speed;
     }
+
     // enemies
-    for (int iEnemy = 0; iEnemy < ARRAYSIZE(enemies); ++iEnemy)
+    for (Enemy* pEnemy = enemies; pEnemy < enemies + ARRAYSIZE(enemies); ++pEnemy)
     {
-        Enemy* pEnemy = enemies + iEnemy;
         if (!pEnemy->IsValid()) continue;
         if(pEnemy->state == EnemyState::inLane)
         {
@@ -141,13 +139,10 @@ void GameEngine::StepLevel()
         else
         {
             // enemy is in the EnemyState::onPlayerPath state
-            float delta = ((float)(stepTime - pEnemy->lastStepTime) / (float)(TicksPerSecond)) * pEnemy->speed;
+            float delta = stepDeltaSeconds * pEnemy->speed;
             delta *= (stepPlayerPosition > pEnemy->pathPosition) ? 1.0f : -1.0f;
             pEnemy->pathPosition += delta;
         }
-
-        pEnemy->lastStepTime = stepTime;
-        
     }
 
     // Spawn new enemies
@@ -224,6 +219,7 @@ void GameEngine::HandleCollisions()
         for(Shot* pEnemyShot = shots; pEnemyShot < shots + ARRAYSIZE(shots); ++pEnemyShot)
         {
             if(!pEnemyShot->IsValid() || pEnemyShot->player) continue;
+            if(pPlayerShot->laneIndex != pEnemyShot->laneIndex) continue;
             if(abs(pPlayerShot->lanePosition - pEnemyShot->lanePosition) < playerShotEnemyShotCollisionThreshold)
             {
                 // TODO - score ?
@@ -350,23 +346,25 @@ void GameEngine::SpawnNextEnemy()
             pNew->laneIndex = rand() % ARRAYSIZE(lanes);
             pNew->lanePosition = 0.0f;
             pNew->pathPosition = 0.0f;
-            pNew->lastStepTime = stepTime;
 
             switch (static_cast<EnemyType>(enemyIndex))
             {
                 case EnemyType::ET_WHITE:
-                    pNew->speed = 0.3f;
+                    pNew->shotsRemaining = 1;
+                    pNew->speed = 0.2f;
                     pNew->color = color_white;
                     pNew->laneSwitching = false;
                     pNew->nextLaneSwitchTime = 0;
                     break;
                 case EnemyType::ET_RED:
-                    pNew->speed = 0.4f;
+                    pNew->shotsRemaining = 2;
+                    pNew->speed = 0.3f;
                     pNew->color = color_red;
                     pNew->laneSwitching = true;
                     pNew->nextLaneSwitchTime = 0;
                     break;
                 case EnemyType::ET_GREEN:
+                    pNew->shotsRemaining = 3;
                     pNew->speed = 0.1f;
                     pNew->color = color_green;
                     pNew->laneSwitching = false;
@@ -384,12 +382,15 @@ void GameEngine::FireEnemyShots()
 {
     for(Enemy* pEnemy = enemies; pEnemy < enemies + ARRAYSIZE(enemies); ++pEnemy)
     {
-        if(pEnemy->nextShotTime <= stepTime)
+        if(!pEnemy->IsValid()) continue;
+
+        if(pEnemy->nextShotTime <= stepTime && pEnemy->shotsRemaining > 1)
         {
             // Time to shoot
             if(pEnemy->state == EnemyState::inLane)
             {
-                AddShot(false, pEnemy->laneIndex, pEnemy->speed * 1.1f, pEnemy->lanePosition); // TODO - maybe we need a shotSpeed for enemies
+                AddShot(false, pEnemy->laneIndex, pEnemy->speed * 1.5f, pEnemy->lanePosition); // TODO - maybe we need a shotSpeed for enemies
+                pEnemy->shotsRemaining--;
             }
             pEnemy->nextShotTime = stepTime + pEnemy->shotDelta;
 
@@ -417,24 +418,22 @@ int& GameEngine::GetEnemiesRemaining(EnemyType et)
 {
     switch (et)
     {
-    case EnemyType::ET_WHITE: return whiteEnemiesRemaining;
-    case EnemyType::ET_RED: return redEnemiesRemaining;
-    case EnemyType::ET_GREEN: return greenEnemiesRemaining;
-    default: return whiteEnemiesRemaining; // mainly to shut up the compiler warning
+        case EnemyType::ET_WHITE: return whiteEnemiesRemaining;
+        case EnemyType::ET_RED: return redEnemiesRemaining;
+        case EnemyType::ET_GREEN: return greenEnemiesRemaining;
+        default: return whiteEnemiesRemaining; // mainly to shut up the compiler warning
     }
 }
 
 void GameEngine::AddShot(bool isPlayer, int laneIndex, float speed, float startingLanePosition)
 {
-    for (int iShot = 0; iShot < ARRAYSIZE(shots); ++iShot)
+    for (Shot* pShot = shots; pShot < shots + ARRAYSIZE(shots); ++pShot)
     {
-        Shot* pShot = shots + iShot;
         if (!pShot->IsValid())
         {
             pShot->player = isPlayer;
             pShot->laneIndex = laneIndex;
-            pShot->speed = speed; // lane-lengths per second
-            pShot->startTime = stepTime;
+            pShot->speed = speed * (isPlayer ? -1.0f : 1.0f); // lane-lengths per second
             pShot->lanePosition = startingLanePosition;
             break;
         }

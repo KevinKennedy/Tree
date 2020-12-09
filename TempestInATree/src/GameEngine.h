@@ -76,11 +76,10 @@ private:
         bool player; // otherwise enemy
         int laneIndex;
         float speed; // lane-lengths per second
-        TickCount startTime;
         float lanePosition;
 
-        inline bool IsValid() const { return startTime > 0; }
-        inline void Invalidate() { startTime = 0; }
+        inline bool IsValid() const { return laneIndex >= 0; }
+        inline void Invalidate() { laneIndex = -1; }
     };
 
     enum class EnemyType
@@ -116,10 +115,10 @@ private:
 
         int laneIndex;
         float lanePosition;
+        int shotsRemaining;
         TickCount nextShotTime;
         TickCount nextLaneSwitchTime;
 
-        TickCount lastStepTime;
         float pathPosition; // could share with lanePosition
 
         inline bool IsValid() const { return startTime > 0; }
@@ -132,6 +131,8 @@ private:
 
     GameState gameState = GameState::GS_GAME_OVER;
     TickCount stepTime = 0;
+    TickCount stepDeltaTicks = 0;
+    float stepDeltaSeconds = 0.0f;
     int levelIndex = 0;
     int score = 0;
     int livesRemaining = 0;
