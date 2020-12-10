@@ -42,8 +42,10 @@ GameEngine::GameEngine()
 
 void GameEngine::Reset(TickCount time)
 {
-    gameState = GameState::GS_STARTING_ANIMATION;
     stepTime = time;
+
+    gameState = GameState::GS_GAME_START_ANIMATION;
+    animationEndTime = stepTime + gameStartAnimationDuration;
     levelIndex = 0;
     score = 0;
     livesRemaining = startingLifeCount;
@@ -73,14 +75,16 @@ void GameEngine::Step(TickCount time, int playerPosition, bool fireButtonPressed
     stepDeltaSeconds = (float)stepDeltaTicks / (float)TicksPerSecond;
     stepTime = time;
 
-    stepPlayerPosition = static_cast<float>(playerPosition) / (float)pathLedCount;
+    stepPlayerPosition = (float)(playerPosition) / (float)pathLedCount;
     stepFireButtonPressed = fireButtonPressed;
 
     switch (gameState)
     {
-        case GameState::GS_STARTING_ANIMATION:
-            // TODO - maybe some animation before starting the next level
-            StartLevel();
+        case GameState::GS_GAME_START_ANIMATION:
+            GameStartAnimation();
+            break;
+        case GameState::GS_LEVEL_START_ANIMATION:
+            LevelStartAnimation();
             break;
         case GameState::GS_PLAYING_LEVEL:
             StepLevel();
@@ -88,13 +92,28 @@ void GameEngine::Step(TickCount time, int playerPosition, bool fireButtonPressed
         case GameState::GS_LIFE_LOST_ANIMATION:
             LifeLostAnimation();
             break;
-        case GameState::GS_NEXT_LEVEL_ANIMATION:
-            break;
         case GameState::GS_GAME_OVER_ANIMATION:
             GameOverAnimation();
             break;
         case GameState::GS_GAME_OVER:
             break;
+    }
+}
+
+void GameEngine::GameStartAnimation()
+{
+    if(stepTime >= animationEndTime)
+    {
+        gameState = GameState::GS_LEVEL_START_ANIMATION;
+        animationEndTime = stepTime + levelStartAnimationDuration;
+    }
+}
+
+void GameEngine::LevelStartAnimation()
+{
+    if(stepTime >= animationEndTime)
+    {
+        StartLevel();
     }
 }
 
@@ -111,8 +130,36 @@ void GameEngine::StartLevel()
 
 void GameEngine::StepLevel()
 {
+    AdvanceGameObjects();
 
-    // Update everything's position
+    SpawnNextEnemy();
+
+    FireEnemyShots();
+
+    // Fire a shot if requested
+    if (stepFireButtonPressed)
+    {
+        if(fireButtonWasReleased)
+        {
+            int laneIndex = GetClosestLaneToPathPosition(stepPlayerPosition);
+            AddShot(true, laneIndex, shotSpeed, 1.0f);
+            fireButtonWasReleased = false;
+        }
+    }
+    else
+    {
+        fireButtonWasReleased = true;
+    }
+    
+    HandleCollisions();
+
+    // Has the player killed all the enemies?  If so, do the next level animation.  If we do spikes, the player may lose lives during that animation
+
+
+}
+
+void GameEngine::AdvanceGameObjects()
+{
     // shots
     for (Shot* pShot = shots; pShot < shots + ARRAYSIZE(shots); ++pShot)
     {
@@ -144,35 +191,102 @@ void GameEngine::StepLevel()
             pEnemy->pathPosition += delta;
         }
     }
+}
 
-    // Spawn new enemies
-    SpawnNextEnemy();
+void GameEngine::SpawnNextEnemy()
+{
+    if (stepTime < nextEmenySpawnTime) return;
 
-    // Have enemies shoot if it's time
-    FireEnemyShots();
-
-    // Fire a shot if requested
-    if (stepFireButtonPressed)
+    int enemiesRemaining = 0;
+    for (EnemyType et = EnemyType::ET_FIRST; et != EnemyType::ET_COUNT; et = NextEnemyType(et))
     {
-        if(fireButtonWasReleased)
+        enemiesRemaining += GetEnemiesRemaining(et);
+    }
+
+    if (enemiesRemaining <= 0)
+    {
+        // All enemies have been spawned
+        nextEmenySpawnTime = TickCountMax;
+        return;
+    }
+
+    nextEmenySpawnTime = stepTime + (TickCount)(levels[levelIndex].enemySpawnDelta * TicksPerSecond);
+
+    int newEnemyIndex = 0;
+    while(newEnemyIndex < ARRAYSIZE(enemies) && enemies[newEnemyIndex].IsValid()) newEnemyIndex++;
+    if(newEnemyIndex >= ARRAYSIZE(enemies))
+    {
+        // No space for new enemies.  Skip this spawn...
+        return;
+    }
+
+    int startingEnemyIndex = rand() & static_cast<int>(EnemyType::ET_COUNT);
+    for (int enemyIndex = startingEnemyIndex; ; enemyIndex = (enemyIndex + 1) % static_cast<int>(EnemyType::ET_COUNT))
+    {
+        int& enemyTypeRemainingToSpawn = GetEnemiesRemaining(static_cast<EnemyType>(enemyIndex));
+        if (enemyTypeRemainingToSpawn > 0)
         {
-            int laneIndex = GetClosestLaneToPathPosition(stepPlayerPosition);
-            AddShot(true, laneIndex, shotSpeed, 1.0f);
-            fireButtonWasReleased = false;
+            enemyTypeRemainingToSpawn--;
+
+
+            Enemy* pNew = enemies + newEnemyIndex;
+            *pNew = {};
+            pNew->shotDelta = (TickCount)(1.5f * (float)TicksPerSecond);
+            pNew->state = EnemyState::inLane;
+            pNew->startTime = stepTime;
+            pNew->laneIndex = rand() % ARRAYSIZE(lanes);
+            pNew->lanePosition = 0.0f;
+            pNew->pathPosition = 0.0f;
+
+            switch (static_cast<EnemyType>(enemyIndex))
+            {
+                case EnemyType::ET_WHITE:
+                    pNew->shotsRemaining = 1;
+                    pNew->speed = 0.2f;
+                    pNew->color = color_white;
+                    pNew->laneSwitching = false;
+                    pNew->nextLaneSwitchTime = 0;
+                    break;
+                case EnemyType::ET_RED:
+                    pNew->shotsRemaining = 2;
+                    pNew->speed = 0.3f;
+                    pNew->color = color_red;
+                    pNew->laneSwitching = true;
+                    pNew->nextLaneSwitchTime = 0;
+                    break;
+                case EnemyType::ET_GREEN:
+                    pNew->shotsRemaining = 3;
+                    pNew->speed = 0.1f;
+                    pNew->color = color_green;
+                    pNew->laneSwitching = false;
+                    pNew->nextLaneSwitchTime = 0;
+                    break;
+            }
+
+            pNew->nextShotTime = stepTime + pNew->shotDelta;
+            break;
         }
     }
-    else
+}
+
+void GameEngine::FireEnemyShots()
+{
+    for(Enemy* pEnemy = enemies; pEnemy < enemies + ARRAYSIZE(enemies); ++pEnemy)
     {
-        fireButtonWasReleased = true;
+        if(!pEnemy->IsValid()) continue;
+
+        if(pEnemy->nextShotTime <= stepTime && pEnemy->shotsRemaining > 1)
+        {
+            // Time to shoot
+            if(pEnemy->state == EnemyState::inLane)
+            {
+                AddShot(false, pEnemy->laneIndex, pEnemy->speed * 1.5f, pEnemy->lanePosition); // TODO - maybe we need a shotSpeed for enemies
+                pEnemy->shotsRemaining--;
+            }
+            pEnemy->nextShotTime = stepTime + pEnemy->shotDelta;
+
+        }
     }
-    
-    HandleCollisions();
-
-    // Has the player killed all the enemies?  If so, do the next level animation.  If we do spikes, the player may lose lives during that animation
-
-    // is the player out of lives?  Start the game-over animation
-
-
 }
 
 void GameEngine::HandleCollisions()
@@ -284,131 +398,30 @@ void GameEngine::HandleCollisions()
             pEnemy->Invalidate();
         }
 
-        if(livesRemaining > 0)
-        {
-            gameState = GameState::GS_LIFE_LOST_ANIMATION;
-            lifeLostAnimationStartTime = stepTime;
-        }
-        else
-        {
-            gameState = GameState::GS_GAME_OVER_ANIMATION;
-            gameOverAnimationStartTime = stepTime;
-        }
-        
-
-    }
-        // enemy shot and player or enemy and player
-            // decrenemt life count, remove all shots, move enemies to the start of the lanes, reset the enemy spawn time, start the player died animation
-
-}
-
-void GameEngine::SpawnNextEnemy()
-{
-    if (stepTime < nextEmenySpawnTime) return;
-
-    int enemiesRemaining = 0;
-    for (EnemyType et = EnemyType::ET_FIRST; et != EnemyType::ET_COUNT; et = NextEnemyType(et))
-    {
-        enemiesRemaining += GetEnemiesRemaining(et);
-    }
-
-    if (enemiesRemaining <= 0)
-    {
-        // All enemies have been spawned
-        nextEmenySpawnTime = TickCountMax;
-        return;
-    }
-
-    nextEmenySpawnTime = stepTime + (TickCount)(levels[levelIndex].enemySpawnDelta * TicksPerSecond);
-
-    int newEnemyIndex = 0;
-    while(newEnemyIndex < ARRAYSIZE(enemies) && enemies[newEnemyIndex].IsValid()) newEnemyIndex++;
-    if(newEnemyIndex >= ARRAYSIZE(enemies))
-    {
-        // No space for new enemies.  Skip this spawn...
-        return;
-    }
-
-    int startingEnemyIndex = rand() & static_cast<int>(EnemyType::ET_COUNT);
-    for (int enemyIndex = startingEnemyIndex; ; enemyIndex = (enemyIndex + 1) % static_cast<int>(EnemyType::ET_COUNT))
-    {
-        int& enemyTypeRemainingToSpawn = GetEnemiesRemaining(static_cast<EnemyType>(enemyIndex));
-        if (enemyTypeRemainingToSpawn > 0)
-        {
-            enemyTypeRemainingToSpawn--;
-
-
-            Enemy* pNew = enemies + newEnemyIndex;
-            *pNew = {};
-            pNew->shotDelta = (TickCount)(1.5f * (float)TicksPerSecond);
-            pNew->state = EnemyState::inLane;
-            pNew->startTime = stepTime;
-            pNew->laneIndex = rand() % ARRAYSIZE(lanes);
-            pNew->lanePosition = 0.0f;
-            pNew->pathPosition = 0.0f;
-
-            switch (static_cast<EnemyType>(enemyIndex))
-            {
-                case EnemyType::ET_WHITE:
-                    pNew->shotsRemaining = 1;
-                    pNew->speed = 0.2f;
-                    pNew->color = color_white;
-                    pNew->laneSwitching = false;
-                    pNew->nextLaneSwitchTime = 0;
-                    break;
-                case EnemyType::ET_RED:
-                    pNew->shotsRemaining = 2;
-                    pNew->speed = 0.3f;
-                    pNew->color = color_red;
-                    pNew->laneSwitching = true;
-                    pNew->nextLaneSwitchTime = 0;
-                    break;
-                case EnemyType::ET_GREEN:
-                    pNew->shotsRemaining = 3;
-                    pNew->speed = 0.1f;
-                    pNew->color = color_green;
-                    pNew->laneSwitching = false;
-                    pNew->nextLaneSwitchTime = 0;
-                    break;
-            }
-
-            pNew->nextShotTime = stepTime + pNew->shotDelta;
-            break;
-        }
-    }
-}
-
-void GameEngine::FireEnemyShots()
-{
-    for(Enemy* pEnemy = enemies; pEnemy < enemies + ARRAYSIZE(enemies); ++pEnemy)
-    {
-        if(!pEnemy->IsValid()) continue;
-
-        if(pEnemy->nextShotTime <= stepTime && pEnemy->shotsRemaining > 1)
-        {
-            // Time to shoot
-            if(pEnemy->state == EnemyState::inLane)
-            {
-                AddShot(false, pEnemy->laneIndex, pEnemy->speed * 1.5f, pEnemy->lanePosition); // TODO - maybe we need a shotSpeed for enemies
-                pEnemy->shotsRemaining--;
-            }
-            pEnemy->nextShotTime = stepTime + pEnemy->shotDelta;
-
-        }
+        gameState = GameState::GS_LIFE_LOST_ANIMATION;
+        animationEndTime = stepTime + lifeLostAnimationDuration;
     }
 }
 
 void GameEngine::LifeLostAnimation()
 {
-    if(stepTime - lifeLostAnimationStartTime > lifeLostAnimationDuration)
+    if(stepTime >= animationEndTime)
     {
-        gameState = GameState::GS_PLAYING_LEVEL;
+        if(livesRemaining > 0)
+        {
+            gameState = GameState::GS_PLAYING_LEVEL;
+        }
+        else
+        {
+            gameState = GameState::GS_GAME_OVER_ANIMATION;
+            animationEndTime = stepTime + gameOverAnimationDuration;
+        }
     }
 }
 
 void GameEngine::GameOverAnimation()
 {
-    if(stepTime - gameOverAnimationStartTime > gameOverAnimationDuration)
+    if(stepTime >= animationEndTime)
     {
         gameState = GameState::GS_GAME_OVER;
     }
@@ -476,6 +489,14 @@ void GameEngine::SetLeds(std::vector<LedColor>& leds) const
 
     LedColor laneColor = color_blue;
 
+    if(GameState::GS_GAME_START_ANIMATION == gameState)
+    {
+        laneColor = color_pink;
+    }
+    if(GameState::GS_LEVEL_START_ANIMATION == gameState)
+    {
+        laneColor = color_yellow;
+    }
     if(gameState == GameState::GS_LIFE_LOST_ANIMATION)
     {
         laneColor = (stepTime % 200) < 50 ? color_black : color_blue;

@@ -38,15 +38,17 @@ private:
     const float playerEnemyShotCollisionThreshold = 0.1; // How close a player needs to be to an enemy shot on the player path for the player to die
     const int startingLifeCount = 4;
 
+    const TickCount gameStartAnimationDuration = 1000;
+    const TickCount levelStartAnimationDuration = 1000;
     const TickCount lifeLostAnimationDuration = 1000;
     const TickCount gameOverAnimationDuration = 1000;
 
     enum class GameState
     {
-        GS_STARTING_ANIMATION,
+        GS_GAME_START_ANIMATION,
+        GS_LEVEL_START_ANIMATION,
         GS_PLAYING_LEVEL,
         GS_LIFE_LOST_ANIMATION,
-        GS_NEXT_LEVEL_ANIMATION,
         GS_GAME_OVER_ANIMATION,
         GS_GAME_OVER,
     };
@@ -146,18 +148,21 @@ private:
     bool stepFireButtonPressed = false;
     bool fireButtonWasReleased = false;
 
-    TickCount lifeLostAnimationStartTime = 0;
-    TickCount gameOverAnimationStartTime = 0;
+    TickCount animationEndTime = 0;
 
 
     void Reset(TickCount time);
     void StartLevel();
     void StepLevel();
-    void LifeLostAnimation();
-    void GameOverAnimation();
-    void HandleCollisions();
     void SpawnNextEnemy();
     void FireEnemyShots();
+    void HandleCollisions();
+    void AdvanceGameObjects();
+
+    void GameStartAnimation();
+    void LevelStartAnimation();
+    void LifeLostAnimation();
+    void GameOverAnimation();
     int& GetEnemiesRemaining(EnemyType et);
     void AddShot(bool isPlayer, int laneIndex, float speed, float startingLanePosition);
     int GetClosestLaneToPathPosition(float pathPosition) const;
