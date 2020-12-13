@@ -45,12 +45,18 @@ void GameEngine::Reset(TickCount time)
     stepTime = time;
 
     gameState = GameState::GS_GAME_START_ANIMATION;
+    animationStartTime = stepTime;
     animationEndTime = stepTime + gameStartAnimationDuration;
-    levelIndex = 0;
+    currentLevelIndex = 0;
     score = 0;
     livesRemaining = startingLifeCount;
     stepPlayerPosition = 0.5;
-    
+
+    ResetShotsAndEnemies();    
+}
+
+void GameEngine::ResetShotsAndEnemies()
+{
     memset(shots, 0, sizeof(shots));
     for (int i = 0; i < ARRAYSIZE(shots); ++i)
     {
@@ -105,6 +111,7 @@ void GameEngine::GameStartAnimation()
     if(stepTime >= animationEndTime)
     {
         gameState = GameState::GS_LEVEL_START_ANIMATION;
+        animationStartTime = stepTime;
         animationEndTime = stepTime + levelStartAnimationDuration;
     }
 }
@@ -121,11 +128,12 @@ void GameEngine::StartLevel()
 {
     gameState = GameState::GS_PLAYING_LEVEL;
     nextEmenySpawnTime = stepTime;
-    whiteEnemiesRemaining = levels[levelIndex].whiteEnemyCount;
-    redEnemiesRemaining = levels[levelIndex].redEnemyCount;
-    greenEnemiesRemaining = levels[levelIndex].greenEnemyCount;
+    whiteEnemiesRemaining = levels[currentLevelIndex].whiteEnemyCount;
+    redEnemiesRemaining = levels[currentLevelIndex].redEnemyCount;
+    greenEnemiesRemaining = levels[currentLevelIndex].greenEnemyCount;
     stepFireButtonPressed = false;
     fireButtonWasReleased = false;
+    ResetShotsAndEnemies();
 }
 
 void GameEngine::StepLevel()
@@ -153,9 +161,7 @@ void GameEngine::StepLevel()
     
     HandleCollisions();
 
-    // Has the player killed all the enemies?  If so, do the next level animation.  If we do spikes, the player may lose lives during that animation
-
-
+    HandleLevelCompleted();
 }
 
 void GameEngine::AdvanceGameObjects()
@@ -170,7 +176,7 @@ void GameEngine::AdvanceGameObjects()
     // enemies
     for (Enemy* pEnemy = enemies; pEnemy < enemies + ARRAYSIZE(enemies); ++pEnemy)
     {
-        if (!pEnemy->IsValid()) continue;
+        if(!pEnemy->IsValid()) continue;
         if(pEnemy->state == EnemyState::inLane)
         {
             pEnemy->lanePosition = ((float)(stepTime - pEnemy->startTime) / (float)TicksPerSecond) * pEnemy->speed;
@@ -210,7 +216,7 @@ void GameEngine::SpawnNextEnemy()
         return;
     }
 
-    nextEmenySpawnTime = stepTime + (TickCount)(levels[levelIndex].enemySpawnDelta * TicksPerSecond);
+    nextEmenySpawnTime = stepTime + (TickCount)(levels[currentLevelIndex].enemySpawnDelta * TicksPerSecond);
 
     int newEnemyIndex = 0;
     while(newEnemyIndex < ARRAYSIZE(enemies) && enemies[newEnemyIndex].IsValid()) newEnemyIndex++;
@@ -220,7 +226,7 @@ void GameEngine::SpawnNextEnemy()
         return;
     }
 
-    int startingEnemyIndex = rand() & static_cast<int>(EnemyType::ET_COUNT);
+    int startingEnemyIndex = rand() % static_cast<int>(EnemyType::ET_COUNT);
     for (int enemyIndex = startingEnemyIndex; ; enemyIndex = (enemyIndex + 1) % static_cast<int>(EnemyType::ET_COUNT))
     {
         int& enemyTypeRemainingToSpawn = GetEnemiesRemaining(static_cast<EnemyType>(enemyIndex));
@@ -237,7 +243,6 @@ void GameEngine::SpawnNextEnemy()
             pNew->laneIndex = rand() % ARRAYSIZE(lanes);
             pNew->lanePosition = 0.0f;
             pNew->pathPosition = 0.0f;
-
             switch (static_cast<EnemyType>(enemyIndex))
             {
                 case EnemyType::ET_WHITE:
@@ -255,7 +260,7 @@ void GameEngine::SpawnNextEnemy()
                     pNew->nextLaneSwitchTime = 0;
                     break;
                 case EnemyType::ET_GREEN:
-                    pNew->shotsRemaining = 3;
+                    pNew->shotsRemaining = 4;
                     pNew->speed = 0.1f;
                     pNew->color = color_green;
                     pNew->laneSwitching = false;
@@ -353,6 +358,7 @@ void GameEngine::HandleCollisions()
 
     bool playerDied = false;
 
+    // See if player was hit by an enemy shot
     for (Shot* pEnemyShot = shots; pEnemyShot < shots + ARRAYSIZE(shots); ++pEnemyShot)
     {
         if (!pEnemyShot->IsValid() || pEnemyShot->player) continue;
@@ -369,7 +375,7 @@ void GameEngine::HandleCollisions()
         }
     }
 
-
+    // See if an enemy ran into the player
     if(!playerDied)
     {
         for(Enemy* pEnemy = enemies; pEnemy < enemies + ARRAYSIZE(enemies); pEnemy++)
@@ -386,6 +392,7 @@ void GameEngine::HandleCollisions()
         }
     }
 
+    // Handle the player dieing
     if(playerDied)
     {
         livesRemaining--;
@@ -399,8 +406,32 @@ void GameEngine::HandleCollisions()
         }
 
         gameState = GameState::GS_LIFE_LOST_ANIMATION;
+        animationStartTime = stepTime;
         animationEndTime = stepTime + lifeLostAnimationDuration;
     }
+}
+
+void GameEngine::HandleLevelCompleted()
+{
+    if(whiteEnemiesRemaining > 0 || redEnemiesRemaining > 0 || greenEnemiesRemaining > 0) return;
+    for(const Enemy* pEnemy = enemies; pEnemy < enemies + ARRAYSIZE(enemies) ; ++pEnemy)
+    {
+        if(pEnemy->IsValid())
+        {
+            return;
+        }
+    }
+
+    // All enemies have been spawned and there are no enemies on the board
+    currentLevelIndex++;
+    if(currentLevelIndex >= ARRAYSIZE(levels))
+    {
+        currentLevelIndex = ARRAYSIZE(levels) - 1;
+    }
+
+    gameState = GameState::GS_LEVEL_START_ANIMATION;
+    animationStartTime = stepTime;
+    animationEndTime = stepTime + levelStartAnimationDuration;
 }
 
 void GameEngine::LifeLostAnimation()
@@ -414,6 +445,7 @@ void GameEngine::LifeLostAnimation()
         else
         {
             gameState = GameState::GS_GAME_OVER_ANIMATION;
+            animationStartTime = stepTime;
             animationEndTime = stepTime + gameOverAnimationDuration;
         }
     }
@@ -495,7 +527,8 @@ void GameEngine::SetLeds(std::vector<LedColor>& leds) const
     }
     if(GameState::GS_LEVEL_START_ANIMATION == gameState)
     {
-        laneColor = color_yellow;
+        SetLevelStartAnimationLeds(leds, stepTime - animationStartTime);
+        return;
     }
     if(gameState == GameState::GS_LIFE_LOST_ANIMATION)
     {
@@ -511,8 +544,14 @@ void GameEngine::SetLeds(std::vector<LedColor>& leds) const
     }
 
 
-    FillLedRange(leds, treeBaseStartLedIndex, treeBaseStartLedIndex + livesRemaining, color_yellow); // off-by-one but simpler logic :-)
-    FillLedRange(leds, treeBaseStartLedIndex + livesRemaining, treeBaseEndLedIndex, color_red);
+    FillLedRange(leds, treeBaseStartLedIndex, treeBaseEndLedIndex, color_red);
+    if(livesRemaining > 0)
+    {
+        FillLedRange(leds, treeBaseStartLedIndex, treeBaseStartLedIndex + livesRemaining - 1, color_yellow);
+    }
+    FillLedRange(leds, treeBaseEndLedIndex, treeBaseEndLedIndex - currentLevelIndex, color_cyan);
+    
+    
     FillLedRange(leds, pathLeftLedIndex, pathRightLedIndex, color_blue);
 
     leds[LedIndexFromRange(pathLeftLedIndex, pathRightLedIndex, stepPlayerPosition)] = color_yellow;
@@ -548,6 +587,36 @@ void GameEngine::SetLeds(std::vector<LedColor>& leds) const
     
 }
 
+void GameEngine::SetLevelStartAnimationLeds(std::vector<LedColor>& leds, TickCount animationTime) const
+{
+    FillLedRange(leds, treeBaseStartLedIndex, treeBaseEndLedIndex, color_black);
+    FillLedRange(leds, pathLeftLedIndex, pathRightLedIndex, color_black);
+
+    const TickCount firstPartDuration = levelStartAnimationDuration / 3;
+    const TickCount secondPartDuration = levelStartAnimationDuration - firstPartDuration;
+
+    if(animationTime <= firstPartDuration)
+    {
+        float t = (float)animationTime / (float)firstPartDuration;
+        //spark::Log("animation Time: %d    t:%f", animationTime, t);
+        for (const Lane* pLane = lanes; pLane < lanes + ARRAYSIZE(lanes); ++pLane)
+        {
+            ColorWipeLed(leds, pLane->startIndex, pLane->endIndex, color_black, color_blue, t);
+        }
+    }
+    else if(animationTime < levelStartAnimationDuration)
+    {
+        float t = (float)(animationTime - firstPartDuration) / (float)secondPartDuration;
+
+        for (const Lane* pLane = lanes; pLane < lanes + ARRAYSIZE(lanes); ++pLane)
+        {
+            ColorWipeLed(leds, pLane->startIndex, pLane->endIndex, color_blue, color_black, t);
+        }
+        
+    }
+    
+
+}
 
 
 bool GameEngine::GetIsGameOver() const

@@ -2,6 +2,7 @@
 #include "CppUnitTest.h"
 #include <vector>
 #include <memory>
+#include <string>
 #include <stdlib.h>
 #include <string.h>
 #include <strsafe.h>
@@ -17,8 +18,125 @@ namespace UnitTests
 	{
 	public:
 		
-		TEST_METHOD(TestMethod1)
+		TEST_METHOD(FillLedRangeTest)
 		{
+			std::vector<LedColor> leds(3, 0);
+
+			AssertLeds(leds, "000");
+			GameEngine::FillLedRange(leds, 0, 0, 1);
+			AssertLeds(leds, "100");
+
+			fill(leds.begin(), leds.end(), 0);
+			AssertLeds(leds, "000");
+			GameEngine::FillLedRange(leds, 0, 1, 1);
+			AssertLeds(leds, "110");
+
+			fill(leds.begin(), leds.end(), 0);
+			AssertLeds(leds, "000");
+			GameEngine::FillLedRange(leds, 1, 0, 1);
+			AssertLeds(leds, "110");
+		}
+
+		TEST_METHOD(ColorWipeLedTest)
+		{
+			{
+				std::vector<LedColor> leds(1, 0);
+				GameEngine::ColorWipeLed(leds, 0, 0, 1, 2, 0.0f);
+				AssertLeds(leds, "2");
+				GameEngine::ColorWipeLed(leds, 0, 0, 1, 2, 0.4f);
+				AssertLeds(leds, "2");
+				GameEngine::ColorWipeLed(leds, 0, 0, 1, 2, 0.6f);
+				AssertLeds(leds, "2");
+				GameEngine::ColorWipeLed(leds, 0, 0, 1, 2, 1.0f);
+				AssertLeds(leds, "1");
+			}
+
+			{
+				std::vector<LedColor> leds(2, 0);
+				GameEngine::ColorWipeLed(leds, 0, 1, 1, 2, 0.0f);
+				AssertLeds(leds, "22");
+				GameEngine::ColorWipeLed(leds, 0, 1, 1, 2, 0.5f);
+				AssertLeds(leds, "12");
+				GameEngine::ColorWipeLed(leds, 0, 1, 1, 2, 1.0f);
+				AssertLeds(leds, "11");
+
+				GameEngine::ColorWipeLed(leds, 1, 0, 1, 2, 0.0f);
+				AssertLeds(leds, "22");
+				GameEngine::ColorWipeLed(leds, 1, 0, 1, 2, 0.5f);
+				AssertLeds(leds, "21");
+				GameEngine::ColorWipeLed(leds, 1, 0, 1, 2, 1.0f);
+				AssertLeds(leds, "11");
+			}
+
+			{
+				std::vector<LedColor> leds(4, 0);
+
+				fill(leds.begin(), leds.end(), 0);
+				AssertLeds(leds, "0000");
+
+				GameEngine::ColorWipeLed(leds, 0, 3, 1, 2, 0.0f);
+				AssertLeds(leds, "2222");
+				GameEngine::ColorWipeLed(leds, 0, 3, 1, 2, 0.25f);
+				AssertLeds(leds, "1222");
+				GameEngine::ColorWipeLed(leds, 0, 3, 1, 2, 0.5f);
+				AssertLeds(leds, "1122");
+				GameEngine::ColorWipeLed(leds, 0, 3, 1, 2, 0.75f);
+				AssertLeds(leds, "1112");
+				GameEngine::ColorWipeLed(leds, 0, 3, 1, 2, 1.0f);
+				AssertLeds(leds, "1111");
+
+				GameEngine::ColorWipeLed(leds, 3, 0, 1, 2, 0.0f);
+				AssertLeds(leds, "2222");
+				GameEngine::ColorWipeLed(leds, 3, 0, 1, 2, 0.25f);
+				AssertLeds(leds, "2221");
+				GameEngine::ColorWipeLed(leds, 3, 0, 1, 2, 0.5f);
+				AssertLeds(leds, "2211");
+				GameEngine::ColorWipeLed(leds, 3, 0, 1, 2, 0.75f);
+				AssertLeds(leds, "2111");
+				GameEngine::ColorWipeLed(leds, 3, 0, 1, 2, 1.0f);
+				AssertLeds(leds, "1111");
+			}
+
+
+			{
+				std::vector<LedColor> leds(6, 0);
+
+				fill(leds.begin(), leds.end(), 0);
+				AssertLeds(leds, "000000");
+
+				GameEngine::ColorWipeLed(leds, 2, 5, 1, 2, 0.0f);
+				AssertLeds(leds, "002222");
+				GameEngine::ColorWipeLed(leds, 2, 5, 1, 2, 0.25f);
+				AssertLeds(leds, "001222");
+				GameEngine::ColorWipeLed(leds, 2, 5, 1, 2, 0.5f);
+				AssertLeds(leds, "001122");
+				GameEngine::ColorWipeLed(leds, 2, 5, 1, 2, 0.75f);
+				AssertLeds(leds, "001112");
+				GameEngine::ColorWipeLed(leds, 2, 5, 1, 2, 1.0f);
+				AssertLeds(leds, "001111");
+
+				GameEngine::ColorWipeLed(leds, 5, 2, 1, 2, 0.0f);
+				AssertLeds(leds, "002222");
+				GameEngine::ColorWipeLed(leds, 5, 2, 1, 2, 0.25f);
+				AssertLeds(leds, "002221");
+				GameEngine::ColorWipeLed(leds, 5, 2, 1, 2, 0.5f);
+				AssertLeds(leds, "002211");
+				GameEngine::ColorWipeLed(leds, 5, 2, 1, 2, 0.75f);
+				AssertLeds(leds, "002111");
+				GameEngine::ColorWipeLed(leds, 5, 2, 1, 2, 1.0f);
+				AssertLeds(leds, "001111");
+			}
+
+		}
+
+		void AssertLeds(const std::vector<LedColor>& leds, const char* pszExpected)
+		{
+			std::string check;
+			for (const auto& value : leds)
+			{
+				check.push_back('0' + value);
+			}
+			Assert::AreEqual(pszExpected, check.c_str());
 		}
 
 		TEST_METHOD(LedIndexFromRangeTest)

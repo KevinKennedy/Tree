@@ -20,7 +20,7 @@ private:
     static const int treeBaseEndLedIndex = 17;
     static const int pathLeftLedIndex = 55;
     static const int pathRightLedIndex = 27;
-    static const int pathLedCount = abs(pathRightLedIndex - pathLeftLedIndex) + 1;
+    static const int pathLedCount = 29; // abs(pathRightLedIndex - pathLeftLedIndex) + 1;
 
     static const int levelCount = 5;
 
@@ -30,16 +30,16 @@ private:
     static const int maxActiveShots = 30; // maximum number of simultanious shots (player and enemy)
     const float shotSpeed = 0.5f; // how many seconds it takes for a shot to travel the length of a lane (or, "lane-lengths per second")
 
-    const float shotEnemyCollisionThreshold = 0.05; // how close a shot needs to be to an enemy hit it
-    const float shotEnemySideCollisionPositionThreshold = 0.95; // When the enemy is on the player path, how far down the lane the shot still needs to be to have then enemy get destroyed
-    const float playerEnemySideDestroyPositionThreshold = 0.1; // When the enemy is on the player path, how close the enemy needs to be to the player to destroy the enemy
-    const float playerShotEnemyShotCollisionThreshold = 0.05; // how close the player's shot needs to be to an enemy shot to count a hit
-    const float playerEnemyCollisionThreshold = 0.05; // How close a player needs to be to an enemy for the player to die
-    const float playerEnemyShotCollisionThreshold = 0.1; // How close a player needs to be to an enemy shot on the player path for the player to die
+    const float shotEnemyCollisionThreshold = 0.05f; // how close a shot needs to be to an enemy hit it
+    const float shotEnemySideCollisionPositionThreshold = 0.95f; // When the enemy is on the player path, how far down the lane the shot still needs to be to have then enemy get destroyed
+    const float playerEnemySideDestroyPositionThreshold = 0.1f; // When the enemy is on the player path, how close the enemy needs to be to the player to destroy the enemy
+    const float playerShotEnemyShotCollisionThreshold = 0.05f; // how close the player's shot needs to be to an enemy shot to count a hit
+    const float playerEnemyCollisionThreshold = 0.05f; // How close a player needs to be to an enemy for the player to die
+    const float playerEnemyShotCollisionThreshold = 0.1f; // How close a player needs to be to an enemy shot on the player path for the player to die
     const int startingLifeCount = 4;
 
     const TickCount gameStartAnimationDuration = 1000;
-    const TickCount levelStartAnimationDuration = 1000;
+    const TickCount levelStartAnimationDuration = 4000;
     const TickCount lifeLostAnimationDuration = 1000;
     const TickCount gameOverAnimationDuration = 1000;
 
@@ -135,7 +135,7 @@ private:
     TickCount stepTime = 0;
     TickCount stepDeltaTicks = 0;
     float stepDeltaSeconds = 0.0f;
-    int levelIndex = 0;
+    int currentLevelIndex = 0;
     int score = 0;
     int livesRemaining = 0;
     float stepPlayerPosition = 0;
@@ -148,19 +148,23 @@ private:
     bool stepFireButtonPressed = false;
     bool fireButtonWasReleased = false;
 
+    TickCount animationStartTime = 0;
     TickCount animationEndTime = 0;
 
 
     void Reset(TickCount time);
+    void ResetShotsAndEnemies();
     void StartLevel();
     void StepLevel();
     void SpawnNextEnemy();
     void FireEnemyShots();
     void HandleCollisions();
+    void HandleLevelCompleted();
     void AdvanceGameObjects();
 
     void GameStartAnimation();
     void LevelStartAnimation();
+    void SetLevelStartAnimationLeds(std::vector<LedColor>& leds, TickCount animationTime) const;
     void LifeLostAnimation();
     void GameOverAnimation();
     int& GetEnemiesRemaining(EnemyType et);
@@ -181,7 +185,7 @@ public:
     void SetLeds(std::vector<LedColor>& leds) const;
 
     int GetRemainingLives() const { return livesRemaining; }
-    int GetLevel() const { return levelIndex; }
+    int GetLevel() const { return currentLevelIndex; }
     int GetScore() const { return score; }
     bool GetIsGameOver() const;
     // GetSoundTrigger
@@ -199,11 +203,36 @@ public:
 
     static void FillLedRange(std::vector<LedColor>& leds, int startLedIndex, int endLedIndex, LedColor color)
     {
-        int delta = endLedIndex > startLedIndex ? 1 : -1;
-        for (LedIndex ledIndex = startLedIndex; ledIndex != endLedIndex; ledIndex += delta)
+        int delta = (endLedIndex < startLedIndex) ? -1 : 1;
+        for (int ledIndex = startLedIndex; ledIndex != endLedIndex + delta; ledIndex += delta)
         {
-            leds[ledIndex] = color;
+            leds[(LedIndex)ledIndex] = color;
         }
+    }
+
+    static void ColorWipeLed(std::vector<LedColor>& leds, int startLedIndex, int endLedIndex, LedColor startColor, LedColor endColor, float t)
+    {
+        if (startLedIndex > endLedIndex)
+        {
+            int temp = endLedIndex;
+            endLedIndex = startLedIndex;
+            startLedIndex = temp;
+
+            LedColor c = endColor;
+            endColor = startColor;
+            startColor = c;
+
+            t = 1.0f - t;
+        }
+
+        int ledCount = (endLedIndex - startLedIndex) + 1;
+        int startGroupCount = (int)(t * ((float)ledCount + 0.499f));
+        int divider = startLedIndex + startGroupCount;
+        for (int ledIndex = startLedIndex; ledIndex != endLedIndex + 1; ++ledIndex)
+        {
+            leds[ledIndex] = (ledIndex < divider) ? startColor : endColor;
+        }
+
     }
 
 };
