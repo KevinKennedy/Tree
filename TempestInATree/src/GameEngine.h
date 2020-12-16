@@ -38,11 +38,6 @@ private:
     const float playerEnemyShotCollisionThreshold = 0.1f; // How close a player needs to be to an enemy shot on the player path for the player to die
     const int startingLifeCount = 4;
 
-    const TickCount gameStartAnimationDuration = 1000;
-    const TickCount levelStartAnimationDuration = 4000;
-    const TickCount lifeLostAnimationDuration = 1000;
-    const TickCount gameOverAnimationDuration = 1000;
-
     enum class GameState
     {
         GS_GAME_START_ANIMATION,
@@ -51,6 +46,13 @@ private:
         GS_LIFE_LOST_ANIMATION,
         GS_GAME_OVER_ANIMATION,
         GS_GAME_OVER,
+    };
+
+    struct AnimatedState
+    {
+        GameState state;
+        TickCount duration;
+        Animator* pAnimator;
     };
 
     struct Lane
@@ -100,6 +102,14 @@ private:
         onPlayerPath
     };
 
+    class TreeTransitionAnimator : public Animator
+    {
+            Animator* pRootAnimator;
+        public:
+            TreeTransitionAnimator(TickCount duration, const Lane* pLanes, int laneCount, LedColor colorStart, LedColor colorEnd);
+	        virtual void Step(TickCount localTime, LedColor* pColors);
+    };
+
     EnemyType NextEnemyType(EnemyType et)
     {
         return static_cast<EnemyType>((static_cast<int>(et) + 1));
@@ -128,6 +138,7 @@ private:
     };
 
 
+    AnimatedState animatedStates[4];
     Lane lanes[laneCount];
     Level levels[levelCount];
 
@@ -148,6 +159,7 @@ private:
     bool stepFireButtonPressed = false;
     bool fireButtonWasReleased = false;
 
+    AnimatedState* pCurrentAnimatedState = NULL;
     TickCount animationStartTime = 0;
     TickCount animationEndTime = 0;
 
@@ -162,11 +174,11 @@ private:
     void HandleLevelCompleted();
     void AdvanceGameObjects();
 
-    void GameStartAnimation();
-    void LevelStartAnimation();
-    void SetLevelStartAnimationLeds(std::vector<LedColor>& leds, TickCount animationTime) const;
-    void LifeLostAnimation();
-    void GameOverAnimation();
+    void BeginAnimatedState(GameState newState);
+    void StepAnimatedState();
+    void SetAnimatedStateLeds(LedColor* pLeds) const;
+
+    void SetLevelStartAnimationLeds(TickCount animationTime, LedColor* pLeds) const;
     int& GetEnemiesRemaining(EnemyType et);
     void AddShot(bool isPlayer, int laneIndex, float speed, float startingLanePosition);
     int GetClosestLaneToPathPosition(float pathPosition) const;
@@ -182,7 +194,7 @@ public:
     void Step(TickCount time, int playerPosition, bool fireButtonPressed);
 
     int GetPathLedCount() const { return pathLedCount; }
-    void SetLeds(std::vector<LedColor>& leds) const;
+    void SetLeds(LedColor* pLeds) const;
 
     int GetRemainingLives() const { return livesRemaining; }
     int GetLevel() const { return currentLevelIndex; }
@@ -201,16 +213,16 @@ public:
         return startIndex + indexInTheRange;
     }
 
-    static void FillLedRange(std::vector<LedColor>& leds, int startLedIndex, int endLedIndex, LedColor color)
+    static void FillLedRange(LedColor* pLeds, int startLedIndex, int endLedIndex, LedColor color)
     {
         int delta = (endLedIndex < startLedIndex) ? -1 : 1;
         for (int ledIndex = startLedIndex; ledIndex != endLedIndex + delta; ledIndex += delta)
         {
-            leds[(LedIndex)ledIndex] = color;
+            pLeds[(LedIndex)ledIndex] = color;
         }
     }
 
-    static void ColorWipeLed(std::vector<LedColor>& leds, int startLedIndex, int endLedIndex, LedColor startColor, LedColor endColor, float t)
+    static void ColorWipeLed(LedColor* pLeds, int startLedIndex, int endLedIndex, LedColor startColor, LedColor endColor, float t)
     {
         if (startLedIndex > endLedIndex)
         {
@@ -230,7 +242,7 @@ public:
         int divider = startLedIndex + startGroupCount;
         for (int ledIndex = startLedIndex; ledIndex != endLedIndex + 1; ++ledIndex)
         {
-            leds[ledIndex] = (ledIndex < divider) ? startColor : endColor;
+            pLeds[ledIndex] = (ledIndex < divider) ? startColor : endColor;
         }
 
     }

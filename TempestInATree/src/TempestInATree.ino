@@ -170,7 +170,7 @@ void loop()
       int playerPosition = ((encoderValue - encoderHomeValue) / encoderClicksPerLED) % gameEngine.GetPathLedCount();
       if(playerPosition < 0) playerPosition += gameEngine.GetPathLedCount();
       gameEngine.Step(millis2(), playerPosition, firePressed);
-      gameEngine.SetLeds(leds);
+      gameEngine.SetLeds(leds.data());
 
       if(startPressed)
       {

@@ -38,15 +38,21 @@ GameEngine::GameEngine()
     levels[4] = { 30, 30, 10, 3.0f, 3.0f, 0.5f };
     _ASSERT(ARRAYSIZE(levels) == 4 + 1);
     _ASSERT(ARRAYSIZE(levels) == levelCount);
+
+    Animator* pGameStartAnimator = new TreeTransitionAnimator(2000, lanes, ARRAYSIZE(lanes), color_black, color_blue);
+
+    animatedStates[0] = {GameState::GS_GAME_START_ANIMATION, pGameStartAnimator->duration(), pGameStartAnimator};
+    animatedStates[1] = {GameState::GS_LEVEL_START_ANIMATION, 4000, NULL};
+    animatedStates[2] = {GameState::GS_LIFE_LOST_ANIMATION, 1000, NULL};
+    animatedStates[3] = {GameState::GS_GAME_OVER_ANIMATION, 1000, NULL};
+    _ASSERT(ARRAYSIZE(animatedStates) == 3 + 1);
 }
 
 void GameEngine::Reset(TickCount time)
 {
     stepTime = time;
 
-    gameState = GameState::GS_GAME_START_ANIMATION;
-    animationStartTime = stepTime;
-    animationEndTime = stepTime + gameStartAnimationDuration;
+    BeginAnimatedState(GameState::GS_GAME_START_ANIMATION);
     currentLevelIndex = 0;
     score = 0;
     livesRemaining = startingLifeCount;
@@ -87,40 +93,16 @@ void GameEngine::Step(TickCount time, int playerPosition, bool fireButtonPressed
     switch (gameState)
     {
         case GameState::GS_GAME_START_ANIMATION:
-            GameStartAnimation();
-            break;
         case GameState::GS_LEVEL_START_ANIMATION:
-            LevelStartAnimation();
+        case GameState::GS_LIFE_LOST_ANIMATION:
+        case GameState::GS_GAME_OVER_ANIMATION:
+            StepAnimatedState();
             break;
         case GameState::GS_PLAYING_LEVEL:
             StepLevel();
             break;
-        case GameState::GS_LIFE_LOST_ANIMATION:
-            LifeLostAnimation();
-            break;
-        case GameState::GS_GAME_OVER_ANIMATION:
-            GameOverAnimation();
-            break;
         case GameState::GS_GAME_OVER:
             break;
-    }
-}
-
-void GameEngine::GameStartAnimation()
-{
-    if(stepTime >= animationEndTime)
-    {
-        gameState = GameState::GS_LEVEL_START_ANIMATION;
-        animationStartTime = stepTime;
-        animationEndTime = stepTime + levelStartAnimationDuration;
-    }
-}
-
-void GameEngine::LevelStartAnimation()
-{
-    if(stepTime >= animationEndTime)
-    {
-        StartLevel();
     }
 }
 
@@ -405,9 +387,7 @@ void GameEngine::HandleCollisions()
             pEnemy->Invalidate();
         }
 
-        gameState = GameState::GS_LIFE_LOST_ANIMATION;
-        animationStartTime = stepTime;
-        animationEndTime = stepTime + lifeLostAnimationDuration;
+        BeginAnimatedState(GameState::GS_LIFE_LOST_ANIMATION);
     }
 }
 
@@ -429,35 +409,97 @@ void GameEngine::HandleLevelCompleted()
         currentLevelIndex = ARRAYSIZE(levels) - 1;
     }
 
-    gameState = GameState::GS_LEVEL_START_ANIMATION;
-    animationStartTime = stepTime;
-    animationEndTime = stepTime + levelStartAnimationDuration;
+    BeginAnimatedState(GameState::GS_LEVEL_START_ANIMATION);
 }
 
-void GameEngine::LifeLostAnimation()
+
+void GameEngine::BeginAnimatedState(GameState newState)
 {
-    if(stepTime >= animationEndTime)
+    for(AnimatedState* pAnimatedState = animatedStates; pAnimatedState < animatedStates + ARRAYSIZE(animatedStates); ++pAnimatedState)
     {
-        if(livesRemaining > 0)
+        if(pAnimatedState->state == newState)
         {
-            gameState = GameState::GS_PLAYING_LEVEL;
+            gameState = newState;
+            animationStartTime = stepTime;
+            animationEndTime = stepTime + pAnimatedState->duration;
+            pCurrentAnimatedState = pAnimatedState;
+            return;
+        }
+    }
+    // ERROR if we're here
+}
+
+void GameEngine::StepAnimatedState()
+{
+    if(NULL != pCurrentAnimatedState)
+    {
+        if(stepTime >= animationEndTime)
+        {
+            // Animated state just ended.  Go to the next state.
+            // We could use lambdas in the AnimatedState structure for this
+            // but some of the embedded compilers had trouble with this stuff
+            // in the past.
+            pCurrentAnimatedState = NULL;
+
+            switch(gameState)
+            {
+                case GameState::GS_GAME_START_ANIMATION:
+                    BeginAnimatedState(GameState::GS_LEVEL_START_ANIMATION);
+                    break;
+
+                case GameState::GS_LEVEL_START_ANIMATION:
+                    StartLevel();
+                    break;
+
+                case GameState::GS_LIFE_LOST_ANIMATION:
+                    if(livesRemaining > 0)
+                    {
+                        gameState = GameState::GS_PLAYING_LEVEL;
+                    }
+                    else
+                    {
+                        BeginAnimatedState(GameState::GS_GAME_OVER_ANIMATION);
+                    }
+                    break;
+
+                case GameState::GS_GAME_OVER_ANIMATION:
+                    gameState = GameState::GS_GAME_OVER;
+                    break;
+                
+                default:
+                    // ERROR
+                    break;
+            }
+        }
+    }
+    // ERROR
+}
+
+void GameEngine::SetAnimatedStateLeds(LedColor* pLeds) const
+{
+    if(NULL != pCurrentAnimatedState)
+    {
+        if(NULL != pCurrentAnimatedState->pAnimator)
+        {
+            pCurrentAnimatedState->pAnimator->Step(stepTime - animationStartTime, pLeds);
         }
         else
         {
-            gameState = GameState::GS_GAME_OVER_ANIMATION;
-            animationStartTime = stepTime;
-            animationEndTime = stepTime + gameOverAnimationDuration;
+            switch (pCurrentAnimatedState->state)
+            {
+                case GameState::GS_LEVEL_START_ANIMATION:
+                    SetLevelStartAnimationLeds(stepTime - animationStartTime, pLeds);
+                    break;
+                
+                default:
+                    // ERROR
+                    break;
+            }
         }
+        
     }
 }
 
-void GameEngine::GameOverAnimation()
-{
-    if(stepTime >= animationEndTime)
-    {
-        gameState = GameState::GS_GAME_OVER;
-    }
-}
 
 int& GameEngine::GetEnemiesRemaining(EnemyType et)
 {
@@ -515,7 +557,7 @@ int GameEngine::GetClosestLaneToPathPosition(float pathPosition) const
 }
 
 
-void GameEngine::SetLeds(std::vector<LedColor>& leds) const
+void GameEngine::SetLeds(LedColor* pLeds) const
 {
     // assumes caller set leds to all 0 before calling
 
@@ -523,11 +565,12 @@ void GameEngine::SetLeds(std::vector<LedColor>& leds) const
 
     if(GameState::GS_GAME_START_ANIMATION == gameState)
     {
-        laneColor = color_pink;
+        SetAnimatedStateLeds(pLeds);
+        return;
     }
     if(GameState::GS_LEVEL_START_ANIMATION == gameState)
     {
-        SetLevelStartAnimationLeds(leds, stepTime - animationStartTime);
+        SetAnimatedStateLeds(pLeds);
         return;
     }
     if(gameState == GameState::GS_LIFE_LOST_ANIMATION)
@@ -544,28 +587,28 @@ void GameEngine::SetLeds(std::vector<LedColor>& leds) const
     }
 
 
-    FillLedRange(leds, treeBaseStartLedIndex, treeBaseEndLedIndex, color_red);
+    FillLedRange(pLeds, treeBaseStartLedIndex, treeBaseEndLedIndex, color_red);
     if(livesRemaining > 0)
     {
-        FillLedRange(leds, treeBaseStartLedIndex, treeBaseStartLedIndex + livesRemaining - 1, color_yellow);
+        FillLedRange(pLeds, treeBaseStartLedIndex, treeBaseStartLedIndex + livesRemaining - 1, color_yellow);
     }
-    FillLedRange(leds, treeBaseEndLedIndex, treeBaseEndLedIndex - currentLevelIndex, color_cyan);
+    FillLedRange(pLeds, treeBaseEndLedIndex, treeBaseEndLedIndex - currentLevelIndex, color_cyan);
     
     
-    FillLedRange(leds, pathLeftLedIndex, pathRightLedIndex, color_blue);
+    FillLedRange(pLeds, pathLeftLedIndex, pathRightLedIndex, color_blue);
 
-    leds[LedIndexFromRange(pathLeftLedIndex, pathRightLedIndex, stepPlayerPosition)] = color_yellow;
+    pLeds[LedIndexFromRange(pathLeftLedIndex, pathRightLedIndex, stepPlayerPosition)] = color_yellow;
 
     for (const Lane* pLane = lanes; pLane < lanes + ARRAYSIZE(lanes); ++pLane)
     {
-        FillLedRange(leds, pLane->startIndex, pLane->endIndex, laneColor);
+        FillLedRange(pLeds, pLane->startIndex, pLane->endIndex, laneColor);
     }
 
     for (const Shot* pShot = shots; pShot < shots + ARRAYSIZE(shots); ++pShot)
     {
         if (!pShot->IsValid()) continue;
         LedIndex ledIndex = lanes[pShot->laneIndex].GetLedIndex(pShot->lanePosition);
-        leds[ledIndex] = pShot->player ? color_white : color_cyan;
+        pLeds[ledIndex] = pShot->player ? color_white : color_cyan;
     }
 
     for (const Enemy* pEnemy = enemies; pEnemy < enemies + ARRAYSIZE(enemies); ++pEnemy)
@@ -582,16 +625,17 @@ void GameEngine::SetLeds(std::vector<LedColor>& leds) const
             ledIndex = LedIndexFromRange(pathLeftLedIndex, pathRightLedIndex, pEnemy->pathPosition);
         }
 
-        leds[ledIndex] = pEnemy->color;
+        pLeds[ledIndex] = pEnemy->color;
     }
     
 }
 
-void GameEngine::SetLevelStartAnimationLeds(std::vector<LedColor>& leds, TickCount animationTime) const
+void GameEngine::SetLevelStartAnimationLeds(TickCount animationTime, LedColor* pLeds) const
 {
-    FillLedRange(leds, treeBaseStartLedIndex, treeBaseEndLedIndex, color_black);
-    FillLedRange(leds, pathLeftLedIndex, pathRightLedIndex, color_black);
+    FillLedRange(pLeds, treeBaseStartLedIndex, treeBaseEndLedIndex, color_black);
+    FillLedRange(pLeds, pathLeftLedIndex, pathRightLedIndex, color_black);
 
+    const TickCount levelStartAnimationDuration = 4000;
     const TickCount firstPartDuration = levelStartAnimationDuration / 3;
     const TickCount secondPartDuration = levelStartAnimationDuration - firstPartDuration;
 
@@ -601,7 +645,7 @@ void GameEngine::SetLevelStartAnimationLeds(std::vector<LedColor>& leds, TickCou
         //spark::Log("animation Time: %d    t:%f", animationTime, t);
         for (const Lane* pLane = lanes; pLane < lanes + ARRAYSIZE(lanes); ++pLane)
         {
-            ColorWipeLed(leds, pLane->startIndex, pLane->endIndex, color_black, color_blue, t);
+            ColorWipeLed(pLeds, pLane->startIndex, pLane->endIndex, color_black, color_blue, t);
         }
     }
     else if(animationTime < levelStartAnimationDuration)
@@ -610,7 +654,7 @@ void GameEngine::SetLevelStartAnimationLeds(std::vector<LedColor>& leds, TickCou
 
         for (const Lane* pLane = lanes; pLane < lanes + ARRAYSIZE(lanes); ++pLane)
         {
-            ColorWipeLed(leds, pLane->startIndex, pLane->endIndex, color_blue, color_black, t);
+            ColorWipeLed(pLeds, pLane->startIndex, pLane->endIndex, color_blue, color_black, t);
         }
         
     }
@@ -618,9 +662,53 @@ void GameEngine::SetLevelStartAnimationLeds(std::vector<LedColor>& leds, TickCou
 
 }
 
-
 bool GameEngine::GetIsGameOver() const
 {
     return false;
+}
+
+GameEngine::TreeTransitionAnimator::TreeTransitionAnimator(TickCount duration, const Lane* pLanes, int laneCount, LedColor colorStart, LedColor colorEnd)
+{
+    duration_ = duration;
+
+    // This animator fades each lane in sequence from the start color to the end color
+    TickCount laneTime = duration / laneCount;
+    TickCount halfLaneTime = laneTime / 2;
+
+
+    AnimatorGroup* pGroup = new AnimatorGroup();
+
+    for(int laneIndex = 0; laneIndex < laneCount; ++laneIndex)
+    {
+        const Lane* pLane = pLanes + laneIndex;
+        int startLedIndex;
+        int ledCount;
+        if(pLane->startIndex < pLane->endIndex)
+        {
+            startLedIndex = pLane->startIndex;
+            ledCount = (pLane->endIndex - pLane->startIndex) + 1;
+        }
+        else
+        {
+            startLedIndex = pLane->endIndex;
+            ledCount = (pLane->startIndex - pLane->endIndex) + 1;
+        }
+        
+        TickCount startColorTime = (laneTime * laneIndex) + halfLaneTime;
+        TickCount endColorTime = (laneTime * (laneCount - laneIndex - 1)) + halfLaneTime;
+        auto pSolidStart = new SolidColor(startColorTime, startLedIndex, ledCount, colorStart);
+        auto pFadeStart = new FadeAnimator(0, startColorTime - halfLaneTime, halfLaneTime,  startLedIndex, ledCount, pSolidStart);
+        auto pSolidEnd = new SolidColor(endColorTime, startLedIndex, ledCount, colorEnd);
+        auto pFadeEnd = new FadeAnimator(halfLaneTime, endColorTime - halfLaneTime, 0, startLedIndex, ledCount, pSolidEnd);
+        pGroup->AddAnimator(pFadeStart, 0);
+        pGroup->AddAnimator(pFadeEnd, startColorTime);
+    }
+
+    pRootAnimator = pGroup;
+}
+
+void GameEngine::TreeTransitionAnimator::Step(TickCount localTime, LedColor* pColors)
+{
+    pRootAnimator->Step(localTime, pColors);
 }
 

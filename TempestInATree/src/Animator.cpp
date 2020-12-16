@@ -99,7 +99,7 @@ FadeAnimator::FadeAnimator(TickCount fadeInDuration, TickCount holdDuration, Tic
 	childAnimator_(childAnimator)
 {
 	// Special case: holdDuration of 0 makes the whole fade animator duration be
-	// the diration of the child (maybe have a seperate constructor for this...)
+	// the duration of the child (maybe have a seperate constructor for this...)
 	if (holdDuration_ == 0)
 	{
 		holdDuration_ = childAnimator_->duration() - (fadeInDuration_ + fadeOutDuration_);
@@ -194,7 +194,7 @@ void ChaseAnimator::Step(TickCount localTime, LedColor* pColors)
 {
 	uint32_t step_index = localTime / step_time_;
 
-	LedIndex patternIndex = (pattern.size() - 1) - (step_index % pattern.size());
+	LedIndex patternIndex = static_cast<LedIndex>((pattern.size() - 1) - (step_index % pattern.size()));
 	for (LedIndex ledIndex = startLedIndex; ledIndex < startLedIndex + ledCount; ++ledIndex)
 	{
 		pColors[ledIndex] = pattern[patternIndex];
