@@ -16,6 +16,7 @@ class GameEngine
     friend class UnitTests::UnitTests;
 
 private:
+    static const int totalLedCount = 400;
     static const int treeBaseStartLedIndex = 1;
     static const int treeBaseEndLedIndex = 17;
     static const int pathLeftLedIndex = 55;
@@ -40,18 +41,19 @@ private:
 
     enum class GameState
     {
+        GS_ATTRACT_ANIMATION,
         GS_GAME_START_ANIMATION,
-        GS_LEVEL_START_ANIMATION,
         GS_PLAYING_LEVEL,
+        GS_LEVEL_START_ANIMATION,
         GS_LIFE_LOST_ANIMATION,
         GS_GAME_OVER_ANIMATION,
-        GS_GAME_OVER,
     };
 
     struct AnimatedState
     {
         GameState state;
         TickCount duration;
+        bool loop;
         Animator* pAnimator;
     };
 
@@ -102,6 +104,14 @@ private:
         onPlayerPath
     };
 
+    class AttractAnimator : public Animator
+    {
+            Animator* pRootAnimator;
+        public:
+            AttractAnimator(int treeBaseStartLedIndex, int treeBaseEndLedIndex, int pathLeftLedIndex, int pathRightLedIndex, const Lane* pLanes, int laneCount);
+	        virtual void Step(TickCount localTime, LedColor* pColors);
+    };
+
     class TreeTransitionAnimator : public Animator
     {
             Animator* pRootAnimator;
@@ -138,11 +148,11 @@ private:
     };
 
 
-    AnimatedState animatedStates[4];
+    AnimatedState animatedStates[5];
     Lane lanes[laneCount];
     Level levels[levelCount];
 
-    GameState gameState = GameState::GS_GAME_OVER;
+    GameState gameState = GameState::GS_ATTRACT_ANIMATION;
     TickCount stepTime = 0;
     TickCount stepDeltaTicks = 0;
     float stepDeltaSeconds = 0.0f;
@@ -158,21 +168,22 @@ private:
     int greenEnemiesRemaining = 0;
     bool stepFireButtonPressed = false;
     bool fireButtonWasReleased = false;
+    bool startButtonWasReleased = false;
 
     AnimatedState* pCurrentAnimatedState = NULL;
     TickCount animationStartTime = 0;
     TickCount animationEndTime = 0;
 
 
-    void Reset(TickCount time);
+    void StartAttractAnimation();
     void ResetShotsAndEnemies();
     void StartLevel();
     void StepLevel();
+    void AdvanceGameObjects();
     void SpawnNextEnemy();
     void FireEnemyShots();
     void HandleCollisions();
     void HandleLevelCompleted();
-    void AdvanceGameObjects();
 
     void BeginAnimatedState(GameState newState);
     void StepAnimatedState();
@@ -187,11 +198,9 @@ private:
 public:
     GameEngine();
 
-    void Start(TickCount time);
-
     void FireShot() { stepFireButtonPressed = true; }
 
-    void Step(TickCount time, int playerPosition, bool fireButtonPressed);
+    void Step(TickCount time, int playerPosition, bool fireButtonPressed, bool startButtonPressed);
 
     int GetPathLedCount() const { return pathLedCount; }
     void SetLeds(LedColor* pLeds) const;
@@ -199,9 +208,22 @@ public:
     int GetRemainingLives() const { return livesRemaining; }
     int GetLevel() const { return currentLevelIndex; }
     int GetScore() const { return score; }
-    bool GetIsGameOver() const;
     // GetSoundTrigger
     // SetLedsLayoutCheck
+
+    static void LedIndicesToStartAndCount(int a, int b, int& start, int& count)
+    {
+        if(b >= a)
+        {
+            start = a;
+            count = b - a + 1;
+        }
+        else
+        {
+            start = b;
+            count = a - b + 1;
+        }
+    }
 
     static int LedIndexFromRange(int startIndex, int endIndex, float position)
     {

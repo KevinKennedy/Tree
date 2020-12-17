@@ -40,25 +40,73 @@ GameEngine::GameEngine()
     _ASSERT(ARRAYSIZE(levels) == levelCount);
 
     Animator* pGameStartAnimator = new TreeTransitionAnimator(2000, lanes, ARRAYSIZE(lanes), color_black, color_blue);
+    Animator* pAttractAnimator = new AttractAnimator(treeBaseStartLedIndex, treeBaseEndLedIndex, pathLeftLedIndex, pathRightLedIndex, lanes, ARRAYSIZE(lanes));
 
-    animatedStates[0] = {GameState::GS_GAME_START_ANIMATION, pGameStartAnimator->duration(), pGameStartAnimator};
-    animatedStates[1] = {GameState::GS_LEVEL_START_ANIMATION, 4000, NULL};
-    animatedStates[2] = {GameState::GS_LIFE_LOST_ANIMATION, 1000, NULL};
-    animatedStates[3] = {GameState::GS_GAME_OVER_ANIMATION, 1000, NULL};
-    _ASSERT(ARRAYSIZE(animatedStates) == 3 + 1);
+    animatedStates[0] = {GameState::GS_ATTRACT_ANIMATION, pAttractAnimator->duration(), true, pAttractAnimator};
+    animatedStates[1] = {GameState::GS_GAME_START_ANIMATION, pGameStartAnimator->duration(), false, pGameStartAnimator};
+    animatedStates[2] = {GameState::GS_LEVEL_START_ANIMATION, 4000, false, NULL};
+    animatedStates[3] = {GameState::GS_LIFE_LOST_ANIMATION, 1000, false, NULL};
+    animatedStates[4] = {GameState::GS_GAME_OVER_ANIMATION, 1000, false, NULL};
+    _ASSERT(ARRAYSIZE(animatedStates) == 4 + 1);
+
+    StartAttractAnimation();
 }
 
-void GameEngine::Reset(TickCount time)
+void GameEngine::Step(TickCount time, int playerPosition, bool fireButtonPressed, bool startButtonPressed)
 {
+    stepDeltaTicks = time - stepTime;
+    stepDeltaSeconds = (float)stepDeltaTicks / (float)TicksPerSecond;
     stepTime = time;
 
-    BeginAnimatedState(GameState::GS_GAME_START_ANIMATION);
+    stepPlayerPosition = (float)(playerPosition) / (float)pathLedCount;
+    stepFireButtonPressed = fireButtonPressed;
+
+    if(startButtonPressed)
+    {
+        if(startButtonWasReleased)
+        {
+            startButtonWasReleased = false;
+            if(GameState::GS_ATTRACT_ANIMATION == gameState)
+            {
+                BeginAnimatedState(GameState::GS_GAME_START_ANIMATION);
+            }
+            else
+            {
+                StartAttractAnimation();
+            }
+            return;
+        }
+    }
+    else
+    {
+        startButtonWasReleased = true;
+    }
+    
+
+    switch (gameState)
+    {
+        case GameState::GS_ATTRACT_ANIMATION:
+        case GameState::GS_GAME_START_ANIMATION:
+        case GameState::GS_LEVEL_START_ANIMATION:
+        case GameState::GS_LIFE_LOST_ANIMATION:
+        case GameState::GS_GAME_OVER_ANIMATION:
+            StepAnimatedState();
+            break;
+        case GameState::GS_PLAYING_LEVEL:
+            StepLevel();
+            break;
+    }
+}
+
+void GameEngine::StartAttractAnimation()
+{
+    BeginAnimatedState(GameState::GS_ATTRACT_ANIMATION);
     currentLevelIndex = 0;
     score = 0;
     livesRemaining = startingLifeCount;
     stepPlayerPosition = 0.5;
 
-    ResetShotsAndEnemies();    
+    ResetShotsAndEnemies();
 }
 
 void GameEngine::ResetShotsAndEnemies()
@@ -73,36 +121,6 @@ void GameEngine::ResetShotsAndEnemies()
     for (int i = 0; i < ARRAYSIZE(enemies); ++i)
     {
         enemies[i].Invalidate();
-    }
-}
-
-void GameEngine::Start(TickCount time)
-{
-    Reset(time);
-}
-
-void GameEngine::Step(TickCount time, int playerPosition, bool fireButtonPressed)
-{
-    stepDeltaTicks = time - stepTime;
-    stepDeltaSeconds = (float)stepDeltaTicks / (float)TicksPerSecond;
-    stepTime = time;
-
-    stepPlayerPosition = (float)(playerPosition) / (float)pathLedCount;
-    stepFireButtonPressed = fireButtonPressed;
-
-    switch (gameState)
-    {
-        case GameState::GS_GAME_START_ANIMATION:
-        case GameState::GS_LEVEL_START_ANIMATION:
-        case GameState::GS_LIFE_LOST_ANIMATION:
-        case GameState::GS_GAME_OVER_ANIMATION:
-            StepAnimatedState();
-            break;
-        case GameState::GS_PLAYING_LEVEL:
-            StepLevel();
-            break;
-        case GameState::GS_GAME_OVER:
-            break;
     }
 }
 
@@ -403,6 +421,7 @@ void GameEngine::HandleLevelCompleted()
     }
 
     // All enemies have been spawned and there are no enemies on the board
+    // so go to the next level
     currentLevelIndex++;
     if(currentLevelIndex >= ARRAYSIZE(levels))
     {
@@ -435,40 +454,49 @@ void GameEngine::StepAnimatedState()
     {
         if(stepTime >= animationEndTime)
         {
-            // Animated state just ended.  Go to the next state.
-            // We could use lambdas in the AnimatedState structure for this
-            // but some of the embedded compilers had trouble with this stuff
-            // in the past.
-            pCurrentAnimatedState = NULL;
-
-            switch(gameState)
+            if(pCurrentAnimatedState->loop)
             {
-                case GameState::GS_GAME_START_ANIMATION:
-                    BeginAnimatedState(GameState::GS_LEVEL_START_ANIMATION);
-                    break;
+                animationStartTime = stepTime;
+                animationEndTime = stepTime + pCurrentAnimatedState->duration;
+            }
+            else
+            {
+                // Animated state just ended.  Go to the next state.
+                // We could use lambdas in the AnimatedState structure for this
+                // but some of the embedded compilers had trouble with this stuff
+                // in the past.
+                pCurrentAnimatedState = NULL;
 
-                case GameState::GS_LEVEL_START_ANIMATION:
-                    StartLevel();
-                    break;
+                switch(gameState)
+                {
+                    case GameState::GS_GAME_START_ANIMATION:
+                        StartLevel();
+                        break;
 
-                case GameState::GS_LIFE_LOST_ANIMATION:
-                    if(livesRemaining > 0)
-                    {
-                        gameState = GameState::GS_PLAYING_LEVEL;
-                    }
-                    else
-                    {
-                        BeginAnimatedState(GameState::GS_GAME_OVER_ANIMATION);
-                    }
-                    break;
+                    case GameState::GS_LEVEL_START_ANIMATION:
+                        StartLevel();
+                        break;
 
-                case GameState::GS_GAME_OVER_ANIMATION:
-                    gameState = GameState::GS_GAME_OVER;
-                    break;
-                
-                default:
-                    // ERROR
-                    break;
+                    case GameState::GS_LIFE_LOST_ANIMATION:
+                        if(livesRemaining > 0)
+                        {
+                            gameState = GameState::GS_PLAYING_LEVEL;
+                        }
+                        else
+                        {
+                            BeginAnimatedState(GameState::GS_GAME_OVER_ANIMATION);
+                        }
+                        break;
+
+                    case GameState::GS_GAME_OVER_ANIMATION:
+                        // Go into attract mode
+                        StartAttractAnimation();
+                        break;
+                    
+                    default:
+                        // ERROR
+                        break;
+                }
             }
         }
     }
@@ -581,9 +609,10 @@ void GameEngine::SetLeds(LedColor* pLeds) const
     {
         laneColor = color_red;
     }
-    else if(gameState == GameState::GS_GAME_OVER)
+    else if(gameState == GameState::GS_ATTRACT_ANIMATION)
     {
-        laneColor = color_green;
+        SetAnimatedStateLeds(pLeds);
+        return;
     }
 
 
@@ -662,11 +691,6 @@ void GameEngine::SetLevelStartAnimationLeds(TickCount animationTime, LedColor* p
 
 }
 
-bool GameEngine::GetIsGameOver() const
-{
-    return false;
-}
-
 GameEngine::TreeTransitionAnimator::TreeTransitionAnimator(TickCount duration, const Lane* pLanes, int laneCount, LedColor colorStart, LedColor colorEnd)
 {
     duration_ = duration;
@@ -708,6 +732,40 @@ GameEngine::TreeTransitionAnimator::TreeTransitionAnimator(TickCount duration, c
 }
 
 void GameEngine::TreeTransitionAnimator::Step(TickCount localTime, LedColor* pColors)
+{
+    pRootAnimator->Step(localTime, pColors);
+}
+
+GameEngine::AttractAnimator::AttractAnimator(int treeBaseStartLedIndex, int treeBaseEndLedIndex, int pathLeftLedIndex, int pathRightLedIndex, const Lane* pLanes, int laneCount)
+{
+    int startLedIndex;
+    int ledCount;
+
+    // Attract animator right now is a green tree, red base, ornaments (random colored LEDs), and some twinkles
+
+    duration_ = 1000 * 60 * 60; // hour long duration - meant to loop indefinitely until the game starts
+    //duration_ = 4000; // for testing
+    const TickCount fadeDuration = 1000;
+
+    AnimatorGroup* pGroup = new AnimatorGroup();
+    for(int laneIndex = 0; laneIndex < laneCount; ++laneIndex)
+    {
+        const Lane* pLane = pLanes + laneIndex;
+        LedIndicesToStartAndCount(pLane->startIndex, pLane->endIndex, startLedIndex, ledCount);
+        pGroup->AddAnimator(new SolidColor(duration_, startLedIndex, ledCount, color_green), 0);
+    }
+
+    LedIndicesToStartAndCount(treeBaseStartLedIndex, treeBaseEndLedIndex, startLedIndex, ledCount);
+    pGroup->AddAnimator(new SolidColor(duration_, startLedIndex, ledCount, color_red), 0);
+    LedIndicesToStartAndCount(pathLeftLedIndex, pathRightLedIndex, startLedIndex, ledCount);
+    pGroup->AddAnimator(new SolidColor(duration_, startLedIndex, ledCount, color_green), 0);
+
+    auto pFade = new FadeAnimator(fadeDuration, duration_ - (2 * fadeDuration), fadeDuration,  0, totalLedCount, pGroup);
+
+    pRootAnimator = pFade;
+}
+
+void GameEngine::AttractAnimator::Step(TickCount localTime, LedColor* pColors)
 {
     pRootAnimator->Step(localTime, pColors);
 }

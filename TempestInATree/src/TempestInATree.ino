@@ -102,8 +102,6 @@ void setup()
 
   // TODO - Put us in GS_LED_INDEX_MODE if some button is pressed at startup
 
-  gameEngine.Start(millis2());
-
   // setup the animations for when we aren't playing the game
   rootAnimator = new AnimatorGroup();
   const bool test = false;
@@ -169,13 +167,8 @@ void loop()
     case GS_PLAYING:
       int playerPosition = ((encoderValue - encoderHomeValue) / encoderClicksPerLED) % gameEngine.GetPathLedCount();
       if(playerPosition < 0) playerPosition += gameEngine.GetPathLedCount();
-      gameEngine.Step(millis2(), playerPosition, firePressed);
+      gameEngine.Step(millis2(), playerPosition, firePressed, startPressed);
       gameEngine.SetLeds(leds.data());
-
-      if(startPressed)
-      {
-        gameEngine.Start(millis2());
-      }
       break;
 
   }
