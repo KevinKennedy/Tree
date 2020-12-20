@@ -2,6 +2,7 @@
 #include <memory>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include "GameEngine.h"
 
@@ -32,21 +33,22 @@ GameEngine::GameEngine()
 
     // whiteEnemyCount, redEnemyCount, greenEnemyCount, fireRateMultiplier, speedMultiplier, enemySpawnDelta
     levels[0] = { 15,  0, 0,  1.0f, 1.0f, 2.0f };
-    levels[1] = { 15, 10, 0,  1.0f, 1.0f, 2.0f };
-    levels[2] = { 15, 10, 5,  1.0f, 1.0f, 1.0f };
-    levels[3] = { 20, 20, 10, 2.0f, 2.0f, 0.75f };
-    levels[4] = { 30, 30, 10, 3.0f, 3.0f, 0.5f };
+    levels[1] = { 15, 10, 0,  1.0f, 1.0f, 1.0f };
+    levels[2] = { 15, 10, 5,  2.0f, 1.0f, 0.75f };
+    levels[3] = { 20, 20, 10, 3.0f, 2.5f, 0.5f };
+    levels[4] = { 30, 30, 10, 4.0f, 3.5f, 0.5f };
     _ASSERT(ARRAYSIZE(levels) == 4 + 1);
     _ASSERT(ARRAYSIZE(levels) == levelCount);
 
     Animator* pGameStartAnimator = new TreeTransitionAnimator(2000, lanes, ARRAYSIZE(lanes), color_black, color_blue);
     Animator* pAttractAnimator = new AttractAnimator(treeBaseStartLedIndex, treeBaseEndLedIndex, pathLeftLedIndex, pathRightLedIndex, lanes, ARRAYSIZE(lanes));
+    Animator* pGameOverAnimator = new TreeTransitionAnimator(2000, lanes, ARRAYSIZE(lanes), color_blue, color_black);
 
     animatedStates[0] = {GameState::GS_ATTRACT_ANIMATION, pAttractAnimator->duration(), true, pAttractAnimator};
     animatedStates[1] = {GameState::GS_GAME_START_ANIMATION, pGameStartAnimator->duration(), false, pGameStartAnimator};
     animatedStates[2] = {GameState::GS_LEVEL_START_ANIMATION, 4000, false, NULL};
     animatedStates[3] = {GameState::GS_LIFE_LOST_ANIMATION, 1000, false, NULL};
-    animatedStates[4] = {GameState::GS_GAME_OVER_ANIMATION, 1000, false, NULL};
+    animatedStates[4] = {GameState::GS_GAME_OVER_ANIMATION, pGameOverAnimator->duration(), false, pGameOverAnimator};
     _ASSERT(ARRAYSIZE(animatedStates) == 4 + 1);
 
     StartAttractAnimation();
@@ -256,14 +258,14 @@ void GameEngine::SpawnNextEnemy()
                     pNew->shotsRemaining = 2;
                     pNew->speed = 0.3f;
                     pNew->color = color_red;
-                    pNew->laneSwitching = true;
+                    pNew->laneSwitching = false;
                     pNew->nextLaneSwitchTime = 0;
                     break;
                 case EnemyType::ET_GREEN:
                     pNew->shotsRemaining = 4;
-                    pNew->speed = 0.1f;
+                    pNew->speed = 0.4f;
                     pNew->color = color_green;
-                    pNew->laneSwitching = false;
+                    pNew->laneSwitching = true;
                     pNew->nextLaneSwitchTime = 0;
                     break;
             }
@@ -542,17 +544,36 @@ int& GameEngine::GetEnemiesRemaining(EnemyType et)
 
 void GameEngine::AddShot(bool isPlayer, int laneIndex, float speed, float startingLanePosition)
 {
-    for (Shot* pShot = shots; pShot < shots + ARRAYSIZE(shots); ++pShot)
+    Shot* pShot;
+    Shot* pAvaliableShot = NULL;
+    int playerShotCount;
+
+    for (pShot = shots, playerShotCount = 0; pShot < shots + ARRAYSIZE(shots); ++pShot)
     {
-        if (!pShot->IsValid())
+        if (pShot->IsValid())
         {
-            pShot->player = isPlayer;
-            pShot->laneIndex = laneIndex;
-            pShot->speed = speed * (isPlayer ? -1.0f : 1.0f); // lane-lengths per second
-            pShot->lanePosition = startingLanePosition;
-            break;
+            if(isPlayer && pShot->player)
+            {
+                if(++playerShotCount >= maxPlayerShots)
+                {
+                    return;
+                }
+            }
+        }
+        else
+        {
+            pAvaliableShot = pShot;
         }
     }
+
+    if(NULL != pAvaliableShot)
+    {
+        pAvaliableShot->player = isPlayer;
+        pAvaliableShot->laneIndex = laneIndex;
+        pAvaliableShot->speed = speed * (isPlayer ? -1.0f : 1.0f); // lane-lengths per second
+        pAvaliableShot->lanePosition = startingLanePosition;
+    }
+
 }
 
 int GameEngine::GetClosestLaneToPathPosition(float pathPosition) const
@@ -607,7 +628,8 @@ void GameEngine::SetLeds(LedColor* pLeds) const
     }
     else if(gameState == GameState::GS_GAME_OVER_ANIMATION)
     {
-        laneColor = color_red;
+        SetAnimatedStateLeds(pLeds);
+        return;
     }
     else if(gameState == GameState::GS_ATTRACT_ANIMATION)
     {
@@ -759,6 +781,7 @@ GameEngine::AttractAnimator::AttractAnimator(int treeBaseStartLedIndex, int tree
     pGroup->AddAnimator(new SolidColor(duration_, startLedIndex, ledCount, color_red), 0);
     LedIndicesToStartAndCount(pathLeftLedIndex, pathRightLedIndex, startLedIndex, ledCount);
     pGroup->AddAnimator(new SolidColor(duration_, startLedIndex, ledCount, color_green), 0);
+    pGroup->AddAnimator(new SparkleAnimator(duration_, pLanes, laneCount, 10, 1000, 5000, color_white), 0);
 
     auto pFade = new FadeAnimator(fadeDuration, duration_ - (2 * fadeDuration), fadeDuration,  0, totalLedCount, pGroup);
 
@@ -768,5 +791,72 @@ GameEngine::AttractAnimator::AttractAnimator(int treeBaseStartLedIndex, int tree
 void GameEngine::AttractAnimator::Step(TickCount localTime, LedColor* pColors)
 {
     pRootAnimator->Step(localTime, pColors);
+}
+
+GameEngine::SparkleAnimator::SparkleAnimator(TickCount duration, const Lane* pLanes, int laneCount, int sparkleCount, TickCount sparkleDuration,  TickCount sparkleCycleDuration,  LedColor sparkleColor) :
+    pLanes_(pLanes),
+    laneCount_(laneCount),
+    sparkleCount_(sparkleCount),
+    sparkleDuration_(sparkleDuration),
+    sparkleCycleDuration_(sparkleCycleDuration),
+    sparkleColor_(sparkleColor)
+{
+    duration_ = duration;
+    pSparkles_ = new Sparkle[sparkleCount_];
+}
+
+float sqr(float f) { return f * f; }
+LedColor CrossFadeColor(float t, LedColor a, LedColor b)
+{
+	LedColor retval = 0;
+    float ti = 1.0f - t;
+
+	retval |= (uint8_t)((float)Red(a)   * ti + (float)Red(b)   * t) << 16;
+	retval |= (uint8_t)((float)Green(a) * ti + (float)Green(b) * t) << 8;
+	retval |= (uint8_t)((float)Blue(a)  * ti + (float)Blue(b)  * t) << 0;
+
+	return retval;
+
+}
+
+void GameEngine::SparkleAnimator::Step(TickCount localTime, LedColor* pColors)
+{
+    // Set the LED for any active sparkle
+    for(int sparkleIndex = 0; sparkleIndex < sparkleCount_; ++sparkleIndex)
+    {
+        Sparkle* pSparkle = pSparkles_ + sparkleIndex;
+
+        if(!pSparkle->IsValid()) continue;
+
+        if(pSparkle->startTime < localTime && pSparkle->startTime + sparkleDuration_ > localTime)
+        {
+            // sparkle is active
+            float t = (float)(localTime - pSparkle->startTime) / (float)sparkleDuration_;
+            float i = t < 0.5f ? sqr(2.0f * t) : sqr(2.0f * (0.5f - (t - 0.5f)));
+            pColors[pSparkle->index] = CrossFadeColor(i, pColors[pSparkle->index], sparkleColor_);
+        }
+
+        // see if this sparkle is done
+        if(pSparkle->startTime + sparkleCycleDuration_ < localTime)
+        {
+            pSparkle->Invalidate();
+        }
+    }
+
+    // Create sparkles for any open spots
+    for(int sparkleIndex = 0; sparkleIndex < sparkleCount_; ++sparkleIndex)
+    {
+        Sparkle* pSparkle = pSparkles_ + sparkleIndex;
+
+        if(pSparkle->IsValid()) continue;
+
+        const Lane* pLane = pLanes_ + (rand() % laneCount_);
+        int startLedIndex;
+        int ledCount;
+        LedIndicesToStartAndCount(pLane->startIndex, pLane->endIndex, startLedIndex, ledCount);
+
+        pSparkle->startTime = localTime + (rand() % (int) sparkleCycleDuration_);
+        pSparkle->index = startLedIndex + (rand() % ledCount);
+    }
 }
 

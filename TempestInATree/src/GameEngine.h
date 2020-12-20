@@ -29,7 +29,8 @@ private:
     static const int maxEnemies = 20; // maximum number of simultanious enemies
 
     static const int maxActiveShots = 30; // maximum number of simultanious shots (player and enemy)
-    const float shotSpeed = 0.5f; // how many seconds it takes for a shot to travel the length of a lane (or, "lane-lengths per second")
+    static const int maxPlayerShots = 4; // maximum number of shots the player can have active on the board at once
+    const float shotSpeed = 0.4f; // how lane lengths a player shot travels in a second
 
     const float shotEnemyCollisionThreshold = 0.05f; // how close a shot needs to be to an enemy hit it
     const float shotEnemySideCollisionPositionThreshold = 0.95f; // When the enemy is on the player path, how far down the lane the shot still needs to be to have then enemy get destroyed
@@ -117,6 +118,31 @@ private:
             Animator* pRootAnimator;
         public:
             TreeTransitionAnimator(TickCount duration, const Lane* pLanes, int laneCount, LedColor colorStart, LedColor colorEnd);
+	        virtual void Step(TickCount localTime, LedColor* pColors);
+    };
+
+    class SparkleAnimator : public Animator
+    {
+            struct Sparkle
+            {
+                TickCount startTime = 0;
+                LedIndex index = 0;
+
+                bool IsValid() { return startTime > 0; }
+                void Invalidate() { startTime = 0; }
+            };
+            
+            const Lane* pLanes_;
+            int laneCount_;
+            
+            int sparkleCount_;
+            Sparkle* pSparkles_;
+            TickCount sparkleDuration_;
+            TickCount sparkleCycleDuration_;
+            LedColor sparkleColor_;
+
+        public:
+            SparkleAnimator(TickCount duration, const Lane* pLanes, int laneCount, int sparkleCount, TickCount sparkleDuration,  TickCount sparkleCycleDuration,  LedColor sparkleColor);
 	        virtual void Step(TickCount localTime, LedColor* pColors);
     };
 
