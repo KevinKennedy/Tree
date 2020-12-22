@@ -134,12 +134,13 @@ private:
             
             const Lane* pLanes_;
             int laneCount_;
-            
             int sparkleCount_;
-            Sparkle* pSparkles_;
             TickCount sparkleDuration_;
             TickCount sparkleCycleDuration_;
             LedColor sparkleColor_;
+
+            TickCount lastLocalTime_;
+            Sparkle* pSparkles_;
 
         public:
             SparkleAnimator(TickCount duration, const Lane* pLanes, int laneCount, int sparkleCount, TickCount sparkleDuration,  TickCount sparkleCycleDuration,  LedColor sparkleColor);

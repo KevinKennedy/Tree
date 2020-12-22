@@ -781,7 +781,7 @@ GameEngine::AttractAnimator::AttractAnimator(int treeBaseStartLedIndex, int tree
     pGroup->AddAnimator(new SolidColor(duration_, startLedIndex, ledCount, color_red), 0);
     LedIndicesToStartAndCount(pathLeftLedIndex, pathRightLedIndex, startLedIndex, ledCount);
     pGroup->AddAnimator(new SolidColor(duration_, startLedIndex, ledCount, color_green), 0);
-    pGroup->AddAnimator(new SparkleAnimator(duration_, pLanes, laneCount, 10, 1000, 5000, color_white), 0);
+    pGroup->AddAnimator(new SparkleAnimator(duration_, pLanes, laneCount, 20, 2000, 5000, color_white), 0);
 
     auto pFade = new FadeAnimator(fadeDuration, duration_ - (2 * fadeDuration), fadeDuration,  0, totalLedCount, pGroup);
 
@@ -802,6 +802,7 @@ GameEngine::SparkleAnimator::SparkleAnimator(TickCount duration, const Lane* pLa
     sparkleColor_(sparkleColor)
 {
     duration_ = duration;
+    lastLocalTime_ = 0;
     pSparkles_ = new Sparkle[sparkleCount_];
 }
 
@@ -821,11 +822,22 @@ LedColor CrossFadeColor(float t, LedColor a, LedColor b)
 
 void GameEngine::SparkleAnimator::Step(TickCount localTime, LedColor* pColors)
 {
-    // Set the LED for any active sparkle
-    for(int sparkleIndex = 0; sparkleIndex < sparkleCount_; ++sparkleIndex)
+    if(localTime < lastLocalTime_)
     {
-        Sparkle* pSparkle = pSparkles_ + sparkleIndex;
+        // we're a stateful animator and only expect time to move forward.
+        // If localTime goes back, it will need to catch up to the start times
+        // for the sparkles before you see any sparkles.
+        // So reset the sparkles if we detedt time moving backwards
+        for(Sparkle* pSparkle = pSparkles_; pSparkle < pSparkles_ + sparkleCount_; ++pSparkle)
+        {
+            pSparkle->Invalidate();
+        }
+    }
+    lastLocalTime_ = localTime;
 
+    // Set the LED for any active sparkle
+    for(Sparkle* pSparkle = pSparkles_; pSparkle < pSparkles_ + sparkleCount_; ++pSparkle)
+    {
         if(!pSparkle->IsValid()) continue;
 
         if(pSparkle->startTime < localTime && pSparkle->startTime + sparkleDuration_ > localTime)

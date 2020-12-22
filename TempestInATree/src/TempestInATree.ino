@@ -47,6 +47,10 @@ const LedCount sectionCount = pixelCount / sectionLength;
 const LedCount halfSectionLength = sectionLength / 2;
 
 
+// Keeps the LEDs from glitching
+// Comment this out if you want to see spark::Log stuff
+SYSTEM_MODE(MANUAL);
+
 
 enum GAME_STATE
 {
