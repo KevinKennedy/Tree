@@ -1,7 +1,7 @@
 # Tempest in a Tree
 ![Demo](Documentation/Images/Demo.gif)
 
-I like to do interactive projects and the holidays are a great excuse.  Holidays also make for a firm deadline - which I need.  A few years ago I did a project using Kinect for Windows to control lights and wanted to something again this year.  After seeing [this video](https://www.youtube.com/watch?v=5wGiDuXApr8) by Bob at "I Like To Make Stuff" it was clear I needed to make Tempest in a Tree.
+I like to do interactive projects and the holidays are a great excuse.  Holidays also make for a firm deadline - which I need.  A few years ago I did a project using Kinect for Windows to control lights and wanted to do something again this year.  After seeing [this video](https://www.youtube.com/watch?v=5wGiDuXApr8) by Bob at "I Like To Make Stuff" it was clear I needed to make Tempest in a Tree.
 ## Hardware
 Hardware is pretty straightforward.  A [Particle Photon](https://store.particle.io/collections/gen-2/products/photon) controls everything.  The LEDs are standard [WS2811 strips](https://www.amazon.com/dp/B01NCAG8KV/ref=cm_sw_em_r_mt_dp_Q7n5FbW4WQNWF).  The rotary encoder is [some random one](https://www.amazon.com/dp/B07MX5DWF3/ref=cm_sw_em_r_mt_dp_y9n5Fb4CPBQW0?_encoding=UTF8&psc=1) I found at Amazon. And the buttons are arcade buttons.
 
